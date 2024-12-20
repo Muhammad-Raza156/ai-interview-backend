@@ -1,0 +1,20 @@
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    DB_USER: str
+    DB_PASSWORD: str
+    DB_NAME: str
+    DB_HOST: str = "localhost"
+    DB_PORT: int = 5432
+    SECRET_KEY: str = ""
+    COHERE_API_KEY: str = ""
+    API_VERSION: str
+    database_url: str
+    
+
+    class Config:
+        env_file = ".env"
+
+
+settings = Settings()
