@@ -1,6 +1,17 @@
 # pull the official docker image
 FROM python:3.10-slim
 
+# Install system dependencies for pdf2image and pytesseract
+RUN apt-get update 
+RUN apt-get install -y poppler-utils 
+RUN apt-get install -y tesseract-ocr 
+RUN apt-get install -y tesseract-ocr-eng 
+RUN apt-get install -y libglib2.0-0 
+RUN apt-get install -y libsm6 
+RUN apt-get install -y libxext6 
+RUN apt-get install -y libxrender-dev 
+RUN apt-get clean
+
 # set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
 ENV PYTHONUNBUFFERED 1

@@ -1,8 +1,14 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
+from dotenv import load_dotenv
+import os
 
-engine = create_async_engine(settings.database_url, echo=True)
+load_dotenv()
+
+
+database_url = f"postgresql+asyncpg://postgres.reyyarznpztvshewnmji:Rgw1MskhnLcuVJFa@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+engine = create_async_engine(database_url, echo=True)
 
 AsyncSessionLocal = sessionmaker(
     bind=engine, expire_on_commit=False, class_=AsyncSession

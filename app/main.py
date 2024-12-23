@@ -3,7 +3,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI
-from app.api.v1.endpoints.example import router as example_router  # Import your router
+from app.api.v1.endpoints.example import router as user_router
+from app.api.v1.endpoints.file import file_router
 from app.db.session import engine
 from app.models.user import Base
 from app.core.config import settings
@@ -45,7 +46,8 @@ async def shutdown():
     print("Database connection closed!")
 
 # Include the example router
-app.include_router(example_router, prefix=f"/api/v{api_version}", tags=["Authentication"])
+app.include_router(user_router, prefix=f"/api/v{api_version}", tags=["Authentication"])
+app.include_router(file_router, prefix=f"/api/v{api_version}", tags=["Resume Upload"])
 
 # Root endpoint
 @app.get("/")
