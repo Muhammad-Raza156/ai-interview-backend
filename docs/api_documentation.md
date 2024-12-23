@@ -91,7 +91,7 @@ Args: file (UploadFile): The PDF file containing the resume.
 
 **Response**
 *200:Successful*
-Returns: dict: A dictionary with a single key "data" whose value is the extracted relevant resume information.
+Returns: dict: A dictionary with a single key "data" whose value is the extracted relevant resume information from user uploaded file.
 
 '''
 {
