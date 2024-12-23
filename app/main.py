@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI
-from app.api.v1.endpoints.example import router as user_router
+from app.api.v1.endpoints.user import router as user_router
 from app.api.v1.endpoints.file import file_router
 from app.db.session import engine
 from app.models.user import Base

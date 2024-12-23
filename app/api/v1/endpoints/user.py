@@ -9,7 +9,7 @@ from passlib.context import CryptContext
 
 
 
-from app.schemas.user import UserLogin, User, TokenData
+from app.schemas.user import UserLogin, User
 from app.core.config import settings
 from app.db.session import get_db_session
 from app.models.user import User as UserModel
@@ -26,8 +26,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 database_url = settings.database_url
-# conn = psycopg2.connect(database_url)
-#conn = psycopg2.connect(database_url)
 
 def get_password_hash(password):
     """Hashes the given password using bcrypt."""
@@ -54,6 +52,12 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
 async def signup(user: User, db: AsyncSession = Depends(get_db_session)):
     """Handles user signup by creating a new user in the database."""
+    stmt = select(UserModel).where(UserModel.email == user.email)
+    result = await db.execute(stmt)
+    existing_user = result.scalar_one_or_none()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="User with this email already exists")
+    
     hashed_password = get_password_hash(user.password)
     user_data = user.dict()
     user_data["password"] = hashed_password
@@ -68,7 +72,7 @@ async def signup(user: User, db: AsyncSession = Depends(get_db_session)):
     
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=400, detail="email already exists")
+        raise HTTPException(status_code=400, detail="User registeration failed")
 
 
 @router.post("/login")
