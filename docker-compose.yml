@@ -12,7 +12,7 @@ services:
     env_file: 
       - .env
     environment:
-      - database_url=postgresql+asyncpg://postgres.reyyarznpztvshewnmji:Rgw1MskhnLcuVJFa@aws-0-ap-south-1.pooler.supabase.com:5432/postgres
+      - database_url=${DATABASE_URL}
     networks:
       - app_network
 
