@@ -1,3 +1,5 @@
+from fastapi.middleware.cors import CORSMiddleware
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,6 +13,21 @@ from app.core.config import settings
 
 # Create the FastAPI app instance
 app = FastAPI()
+
+origins = [
+    "http://localhost:3000",
+    "http://0.0.0.0:3000",
+    "http://localhost:8000",
+    "http://0.0.0.0:8000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 api_version= settings.API_VERSION
 # Database setup: Create tabless
