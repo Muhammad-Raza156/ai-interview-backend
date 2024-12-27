@@ -99,6 +99,7 @@ async def login(user_login: UserLogin, db: AsyncSession = Depends(get_db_session
     
 
 
+
 @router.get("/users/{user_mail}")
 async def read_users(user_mail: EmailStr, db: AsyncSession = Depends(get_db_session)):
     """Returns a list of all user objects in the database."""
