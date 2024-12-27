@@ -6,10 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from passlib.context import CryptContext
+from pydantic import EmailStr
 
 
 
-from app.schemas.user import UserLogin, User
+from app.schemas.autentication import UserLogin, User
+from app.api.api_resonse import error_response, success_response
 from app.core.config import settings
 from app.db.session import get_db_session
 from app.models.user import User as UserModel
@@ -67,30 +69,45 @@ async def signup(user: User, db: AsyncSession = Depends(get_db_session)):
     try:
         await db.commit()
         await db.refresh(new_user)
-
-        return {"message": "User registered successfully"}
+        return success_response(data="User created successfully")
     
-    except IntegrityError:
+    except IntegrityError as e:
         await db.rollback()
-        raise HTTPException(status_code=400, detail="User registeration failed")
+        return error_response(message=str(e))
 
 
 @router.post("/login")
 async def login(user_login: UserLogin, db: AsyncSession = Depends(get_db_session)):
     """Authenticates a user and returns an access token if valid."""
-    stmt = select(UserModel).where(UserModel.email == user_login.email)
     stmt=select(UserModel).where(UserModel.email==user_login.email)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     
     try:
         if not user or not verify_password(user_login.password, user.password):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+            raise error_response(message="Incorrect username or password")
         
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(data={"sub": user.email}, expires_delta=access_token_expires)
-
-        return {"access_token": access_token, "token_type": "bearer"}
+        data={"access_token": access_token, "token_type": "bearer"}
+        return success_response(data=data)
     
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise error_response(message=str(e))
+    
+
+    
+
+
+@router.get("/users/{user_mail}")
+async def read_users(user_mail: EmailStr, db: AsyncSession = Depends(get_db_session)):
+    """Returns a list of all user objects in the database."""
+    try:
+        stmt = select(UserModel).where(UserModel.email == user_mail)
+        result = await db.execute(stmt)
+        users = result.scalars().all()
+
+        return users
+    
+    except Exception as e:
+        return error_response(message=str(e))
