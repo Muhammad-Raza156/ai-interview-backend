@@ -23,6 +23,7 @@ WORKDIR /app
 COPY requirements/  app/requirements/
 
 # Install dependencies from base.txt
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r app/requirements/base.txt
 
 # Optionally, install dependencies from dev.txt or prod.txt if needed
