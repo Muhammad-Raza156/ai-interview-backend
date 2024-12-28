@@ -62,7 +62,7 @@ def process_resume(resume_text):
 )
     return response.message.content[0].text
 
-@file_router.post("/file", tags=["Resume Upload"])
+@file_router.post("/file")
 async def upload_file(file: UploadFile=File(...)):
     
     """
