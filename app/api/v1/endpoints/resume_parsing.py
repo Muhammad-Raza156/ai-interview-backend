@@ -66,7 +66,7 @@ def process_resume(resume_text):
 async def upload_file(file: UploadFile=File(...)):
     
     """
-    Uploads a resume in PDF format and extracts education from it using the Cohere AI model.
+    Uploads a resume in PDF format and extracts education from it using an AI model.
 
     Args:
         file (UploadFile): The PDF file containing the resume.
