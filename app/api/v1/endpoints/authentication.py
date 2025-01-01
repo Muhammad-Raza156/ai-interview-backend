@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from jwt import encode as jwt_encode
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from passlib.context import CryptContext
@@ -17,7 +17,7 @@ from app.db.session import get_db_session
 from app.models.user import User as UserModel
 
 
-router = APIRouter()
+auth_router = APIRouter()
 
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
@@ -50,7 +50,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     return token
 
 
-@router.post("/Signup")
+@auth_router.post("/Signup")
 
 async def signup(user: User, db: AsyncSession = Depends(get_db_session)):
     """Handles user signup by creating a new user in the database."""
@@ -76,7 +76,7 @@ async def signup(user: User, db: AsyncSession = Depends(get_db_session)):
         return error_response(message=str(e))
 
 
-@router.post("/login")
+@auth_router.post("/login")
 async def login(user_login: UserLogin, db: AsyncSession = Depends(get_db_session)):
     """Authenticates a user and returns an access token if valid."""
     stmt=select(UserModel).where(UserModel.email==user_login.email)
@@ -94,21 +94,3 @@ async def login(user_login: UserLogin, db: AsyncSession = Depends(get_db_session
     
     except Exception as e:
         raise error_response(message=str(e))
-    
-
-    
-
-
-
-@router.get("/users/{user_mail}")
-async def read_users(user_mail: EmailStr, db: AsyncSession = Depends(get_db_session)):
-    """Returns a list of all user objects in the database."""
-    try:
-        stmt = select(UserModel).where(UserModel.email == user_mail)
-        result = await db.execute(stmt)
-        users = result.scalars().all()
-
-        return users
-    
-    except Exception as e:
-        return error_response(message=str(e))

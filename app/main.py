@@ -5,9 +5,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI
-from app.api.v1.endpoints.authentication import router as auth_router
+from fastapi_pagination import add_pagination
+from app.api.v1.endpoints.authentication import auth_router
 from app.api.v1.endpoints.resume_parsing import file_router as resume_router
 from app.api.v1.endpoints.text_similarity import similarity_router
+from app.api.v1.endpoints.user_management import user_router
+
 
 from app.db.session import engine
 from app.models.user import Base
@@ -15,6 +18,8 @@ from app.core.config import settings
 
 # Create the FastAPI app instance
 app = FastAPI()
+
+add_pagination(app)
 
 origins = [
     "http://localhost:3000",
@@ -66,6 +71,7 @@ async def shutdown():
 
 # Include the example router
 app.include_router(auth_router, prefix=f"/api/v{api_version}", tags=["Authentication"])
+app.include_router(user_router, prefix=f"/api/v{api_version}", tags=["User Management"])
 app.include_router(resume_router, prefix=f"/api/v{api_version}", tags=["Resume Parsing"])
 app.include_router(similarity_router, prefix=f"/api/v{api_version}", tags=["Text Similarity"])
 
