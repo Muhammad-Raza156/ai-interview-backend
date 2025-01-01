@@ -1,4 +1,7 @@
 from pydantic import BaseModel, EmailStr
+from typing import Optional
+from uuid import UUID
+
 
 class Token(BaseModel):
     access_token: str
@@ -6,7 +9,7 @@ class Token(BaseModel):
 
 
 class TokenData(BaseModel):
-    first_name: str | None = None
+    id: UUID
 
 
 class User(BaseModel):

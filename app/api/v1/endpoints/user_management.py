@@ -47,7 +47,7 @@ async def view_users(
         if page > total_pages:
             raise HTTPException(status_code=404, detail="Page not found")
         users_query = select(
-               UserModel.id, UserModel.first_name, UserModel.last_name, UserModel.email
+               UserModel.id, UserModel.user_id, UserModel.first_name, UserModel.last_name, UserModel.email
                )
         users = await db.execute(users_query.limit(size).offset((page-1)*size))
         return PaginatedUserResponse(users= [ViewUser.from_orm(user) for user in users], total_users=total_users, total_pages=total_pages, current_page=page, has_next=page < total_pages, has_previous=page > 1)

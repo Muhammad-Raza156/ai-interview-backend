@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     COHERE_API_KEY: str = ""
     API_VERSION: str
     database_url: str
+    db_url: str
     
 
     class Config:
