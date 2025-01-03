@@ -14,3 +14,4 @@ class User(Base):
     email = Column(VARCHAR, unique=True, nullable=False)
     password = Column(VARCHAR, nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

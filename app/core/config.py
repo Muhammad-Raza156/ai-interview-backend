@@ -8,10 +8,13 @@ class Settings(BaseSettings):
     DB_HOST: str = "aws-0-ap-south-1.pooler.supabase.com"
     DB_PORT: int = 5432
     SECRET_KEY: str = ""
+    ALGORITHM: str
     COHERE_API_KEY: str = ""
     API_VERSION: str
     database_url: str
     DB_URL: str
+    SUPABASE_URL: str
+    SUPABASE_KEY: str
     
 
     class Config:

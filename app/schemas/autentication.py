@@ -1,15 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
-from uuid import UUID
 
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-
-class TokenData(BaseModel):
-    id: UUID
 
 
 class User(BaseModel):
@@ -23,3 +13,5 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class TokenData(BaseModel):
+    user_email: str

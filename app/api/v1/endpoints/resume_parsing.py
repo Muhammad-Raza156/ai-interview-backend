@@ -1,17 +1,63 @@
-from fastapi import APIRouter, HTTPException
-from fastapi import UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, status
+#from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import UploadFile, File, Form
 import cohere
-from app.core.config import settings
 import pytesseract
 from pdf2image import convert_from_bytes
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+import jwt
+#from jose import JWTError
+from supabase import create_client, Client
+
+from app.core.config import settings
+from app.schemas.autentication import TokenData
+from app.db.session import get_db_session
+from app.models.user import User as UserModel
+from app.schemas.user_management import ViewUser
 
 
+
+
+
+#oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+bearer_scheme = HTTPBearer()
 
 file_router = APIRouter()
 co=cohere.ClientV2(settings.COHERE_API_KEY)
+supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
 # Set Tesseract path
 pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme) , db: AsyncSession = Depends(get_db_session)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+
+    )
+    token=credentials.credentials
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_email: str = payload.get("sub")
+        if user_email is None:
+            raise credentials_exception
+        token_data = TokenData(user_email=user_email)
+         
+        stmt=select(UserModel.id,UserModel.user_id,UserModel.first_name,UserModel.last_name,UserModel.email).where(UserModel.email==token_data.user_email)
+        result = await db.execute(stmt)
+        if result is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        db_user = result.first()
+        if db_user is None:
+            return {"error": "User not found"}
+        user=ViewUser.from_orm(db_user)
+        return user
+    except jwt.DecodeError:
+        raise credentials_exception
 
 async def process_pdf(pdf_content):
     """
@@ -29,7 +75,7 @@ async def process_pdf(pdf_content):
     """
 
     pdf_images=convert_from_bytes(pdf_content, dpi=300,  
-                                  poppler_path="/usr/bin")
+                                  poppler_path='/usr/bin/')
     
     text=""
     for image in pdf_images:
@@ -63,36 +109,80 @@ def process_resume(resume_text):
     return response.message.content[0].text
 
 @file_router.post("/file")
-async def upload_file(file: UploadFile=File(...)):
+async def file_parsing(current_user: ViewUser = Depends(get_current_user)):
     
     """
-    Uploads a resume in PDF format and extracts education from it using an AI model.
+    Retrieves and processes a user's resume file stored in Supabase storage.
+
+    This function retrieves the first resume file associated with the current user
+    from the Supabase storage. It then processes the PDF file to extract text, 
+    and further processes the text to extract relevant resume information such as 
+    skills, work experience, projects, and education using the Cohere model.
 
     Args:
-        file (UploadFile): The PDF file containing the resume.
-
-    Returns:
-        dict: A dictionary with a single key "data" whose value is the extracted relevant resume information.
+        current_user (ViewUser): The current user authenticated and retrieved from 
+        the token.
 
     Raises:
-        HTTPException: If the file is not in PDF format.
+        HTTPException: If no files are found for the user, if the file cannot be 
+        downloaded, or if any other error occurs during processing.
+
+    Returns:
+        dict: A dictionary containing the extracted relevant resume information.
     """
+    try:
+        user_id = current_user.user_id
 
+        folder_path = f"resumes/users/{user_id}/"
+
+        
+        response=supabase.storage.from_("resumes").list(path=folder_path)
+        if not response:
+            raise HTTPException(status_code=404, detail="No files found for this user.")
+            
+        file_name = response[0]['name']
+        #file_path=f"{folder_path}{file_name}"
+        content= supabase.storage.from_("resumes").download(f"{folder_path}{file_name}")
+        if  not content:
+            raise HTTPException(status_code=404, detail="File not found.")
+
+        resume_text = await process_pdf(content)
+        text = process_resume(resume_text)
+        return {"data": text}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+    
+
+@file_router.post("/submit-application")
+async def submit_application(job_role: str = Form(...), description: str = Form(...), 
+                             difficulty_level: str = Form(...),
+                             file: UploadFile=File(...),
+                             current_user: ViewUser = Depends(get_current_user)):
+    
     if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+        raise HTTPException(status_code=400, detail="Only PDF files are allowed for the resume.")
+    # save pdf to bucket on supabase
 
-    content = await file.read()
+    user_id = current_user.user_id
 
-    # Process the PDF content and get the text from it
-    resume_text = await process_pdf(content)
+    file_name = f"{user_id}_{file.filename}"
+    folder_path = f"resumes/users/{user_id}/"
 
+    try:
+        file_content = await file.read()
 
-    text=process_resume(resume_text)
+        response = supabase.storage.from_("resumes").upload(f"{folder_path}{file_name}", file_content)
 
+        if "data" not in response:
+            raise HTTPException(status_code=500, detail="Failed to upload file to Supabase")
+        
+        file_url = supabase.storage.from_("resumes").get_public_url(f"{folder_path}{file_name}")
 
+        return {"file":file_url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    api_response = {
-            "data": text
-        }
-
-    return api_response
