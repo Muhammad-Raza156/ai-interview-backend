@@ -3,7 +3,6 @@ from typing import List
 from uuid import UUID 
 
 class ViewUser(BaseModel):
-    id: int
     user_id: UUID
     first_name: str
     last_name: str

@@ -14,6 +14,7 @@ from app.db.session import get_db_session
 from app.models.user import User as UserModel
 from app.schemas.user_management import PaginatedUserResponse, ViewUser
 from app.api.v1.endpoints.authentication import verify_password, get_password_hash
+from app.api.v1.endpoints.resume_parsing import get_current_user
 
 user_router = APIRouter()
 add_pagination(user_router)
@@ -22,7 +23,7 @@ add_pagination(user_router)
 async def read_users(user_mail: EmailStr, db: AsyncSession = Depends(get_db_session)):
     """Returns a list of all user objects in the database."""
     try:
-        stmt = select(UserModel.id, UserModel.user_id, UserModel.first_name, UserModel.last_name, UserModel.email).where(UserModel.email == user_mail)
+        stmt = select(UserModel.user_id, UserModel.first_name, UserModel.last_name, UserModel.email).where(UserModel.email == user_mail)
         result = await db.execute(stmt)
         users  = [ViewUser.from_orm(user) for user in result]
         return users
@@ -40,14 +41,14 @@ async def view_users(
 ):
     """Returns a list of all user objects in the database."""
     try:
-        total_users_query = select(func.count(UserModel.id))
+        total_users_query = select(func.count(UserModel.user_id))
         total_users_result = await db.execute(total_users_query)
         total_users = total_users_result.scalar()
         total_pages = ceil(total_users/size)
         if page > total_pages:
             raise HTTPException(status_code=404, detail="Page not found")
         users_query = select(
-               UserModel.id, UserModel.user_id, UserModel.first_name, UserModel.last_name, UserModel.email
+               UserModel.user_id, UserModel.first_name, UserModel.last_name, UserModel.email
                )
         users = await db.execute(users_query.limit(size).offset((page-1)*size))
         return PaginatedUserResponse(users= [ViewUser.from_orm(user) for user in users], total_users=total_users, total_pages=total_pages, current_page=page, has_next=page < total_pages, has_previous=page > 1)
@@ -58,7 +59,8 @@ async def view_users(
 
 @user_router.patch("/update-email")
 async def update_user_email(
-    old_email: EmailStr, new_email: EmailStr, db: AsyncSession = Depends(get_db_session)
+    old_email: EmailStr, new_email: EmailStr, 
+    db: AsyncSession = Depends(get_db_session), current_user: ViewUser = Depends(get_current_user)
 ):
     """
     Updates the email of a user in the database.
@@ -74,8 +76,11 @@ async def update_user_email(
     Returns:
         dict: A JSON response with a success message.
     """
+    user_id=current_user.user_id
     try:
-        stmt = select(UserModel).where(UserModel.email == old_email)
+        if old_email != current_user.email:
+            raise HTTPException(status_code=400, detail="Unauthorized")
+        stmt = select(UserModel).where(UserModel.email == old_email, UserModel.user_id == user_id)
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
         if user is None:
@@ -90,7 +95,8 @@ async def update_user_email(
 
 @user_router.patch("/update-password")
 async def update_user_password(
-    email: EmailStr, old_password: str, new_password: str, db: AsyncSession = Depends(get_db_session)
+    email: EmailStr, old_password: str, new_password: str, 
+    db: AsyncSession = Depends(get_db_session), current_user: ViewUser = Depends(get_current_user)
 ):
     """
     Updates the password of a user in the database.
@@ -107,8 +113,9 @@ async def update_user_password(
     Returns:
         dict: A JSON response with a success message.
     """
+    user_id=current_user.user_id
     try:
-        stmt = select(UserModel).where(UserModel.email == email)
+        stmt = select(UserModel).where(UserModel.user_id == user_id, UserModel.email == email)
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
         if user is None or not verify_password(old_password, user.password):

@@ -4,7 +4,6 @@ from sqlalchemy import Column, Integer, String
 
 @as_declarative()
 class Base:
-    id = Column(Integer, primary_key=True)
     __name__ = String
     @declared_attr
     def __tablename__(cls):

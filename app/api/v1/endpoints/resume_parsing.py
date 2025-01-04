@@ -47,7 +47,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(b
             raise credentials_exception
         token_data = TokenData(user_email=user_email)
          
-        stmt=select(UserModel.id,UserModel.user_id,UserModel.first_name,UserModel.last_name,UserModel.email).where(UserModel.email==token_data.user_email)
+        stmt=select(UserModel.user_id,UserModel.first_name,UserModel.last_name,UserModel.email).where(UserModel.email==token_data.user_email)
         result = await db.execute(stmt)
         if result is None:
             raise HTTPException(status_code=404, detail="User not found")
