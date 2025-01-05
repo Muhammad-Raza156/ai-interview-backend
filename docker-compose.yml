@@ -13,6 +13,7 @@ services:
       - .env
     environment:
       - database_url=${DATABASE_URL}
+      - cohere_api_key=${COHERE_API_KEY}
     networks:
       - app_network
 

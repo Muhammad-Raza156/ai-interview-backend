@@ -14,7 +14,7 @@ from app.db.session import get_db_session
 from app.models.user import User as UserModel
 from app.schemas.user_management import PaginatedUserResponse, ViewUser
 from app.api.v1.endpoints.authentication import verify_password, get_password_hash
-from app.api.v1.endpoints.resume_parsing import get_current_user
+from app.utils.user_management import get_current_user
 
 user_router = APIRouter()
 add_pagination(user_router)

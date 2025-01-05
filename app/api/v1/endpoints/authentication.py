@@ -1,53 +1,29 @@
-from datetime import datetime, timedelta, timezone
-from jwt import encode as jwt_encode
+from datetime import timedelta
+#from jwt import encode as jwt_encode
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from passlib.context import CryptContext
-from pydantic import EmailStr
 
 
 
 from app.schemas.autentication import UserLogin, User
 from app.api.api_resonse import error_response, success_response
-from app.core.config import settings
 from app.db.session import get_db_session
 from app.models.user import User as UserModel
+from app.utils.authentication import verify_password, get_password_hash, create_access_token
 
 
 auth_router = APIRouter()
 
-SECRET_KEY = settings.SECRET_KEY
-ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+#pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-database_url = settings.database_url
-
-def get_password_hash(password):
-    """Hashes the given password using bcrypt."""
-    return pwd_context.hash(password)
-
-
-def verify_password(plain_password, hashed_password):
-    """Verifies whether the plain password matches the hashed password."""
-    return pwd_context.verify(plain_password, hashed_password)
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    """Creates a JWT token with an optional expiration time."""
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    token = jwt_encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return token
+#database_url = settings.database_url
 
 
 @auth_router.post("/Signup")

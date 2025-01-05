@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI
-from fastapi.openapi.utils import get_openapi
 from fastapi_pagination import add_pagination
 from app.api.v1.endpoints.authentication import auth_router
 from app.api.v1.endpoints.resume_parsing import file_router as resume_router
