@@ -11,7 +11,7 @@ from math import ceil
 
 from app.api.api_resonse import error_response
 from app.db.session import get_db_session
-from app.models.user import User as UserModel
+from app.models.db_models import User as UserModel
 from app.schemas.user_management import PaginatedUserResponse, ViewUser
 from app.api.v1.endpoints.authentication import verify_password, get_password_hash
 from app.utils.user_management import get_current_user

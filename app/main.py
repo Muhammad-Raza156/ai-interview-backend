@@ -13,7 +13,7 @@ from app.api.v1.endpoints.user_management import user_router
 
 
 from app.db.session import engine
-from app.models.user import Base
+from app.db.base import Base
 from app.core.config import settings
 
 # Create the FastAPI app instance

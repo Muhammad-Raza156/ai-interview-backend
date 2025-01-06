@@ -1,6 +1,6 @@
 from app.schemas.user_management import ViewUser
 from app.db.session import get_db_session
-from app.models.user import User as UserModel
+from app.models.db_models import User as UserModel
 from app.schemas.autentication import TokenData
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials

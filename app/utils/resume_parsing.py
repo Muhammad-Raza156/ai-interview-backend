@@ -5,21 +5,11 @@ from langchain_core.prompts import PromptTemplate
 from app.core.config import settings
 from typing_extensions import Annotated, TypedDict
 from langchain_cohere import ChatCohere
-#import os
-#os.environ["TESSDATA_PREFIX"] = r"C:\Program Files\Tesseract-OCR\tessdata"
+
 # Set Tesseract path
 pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
 cohere_api_key=settings.COHERE_API_KEY
 
-# TypedDict
-class ResumeResponse(TypedDict):
-    """Relevant resume sections."""
-
-    skills: Annotated[str, ..., "skills section of the given resume text"]
-    experience: Annotated[str, ..., "work experience section of the given resume text"]
-    years: Annotated[int, None, "total work experience in years "]
-    education: Annotated[str, ..., "education section of the given resume text"]
-    projects: Annotated[str, ..., "projects section of the resume"]
 
 async def process_pdf(pdf_content):
     """
@@ -36,8 +26,9 @@ async def process_pdf(pdf_content):
     libraries, as well as a local installation of Tesseract OCR.
     """
     #local_poppler_path = r"C:\Program Files\poppler-24.08.0\Library\bin"
+    dokcer_poppler_path = "/usr/bin/"
     pdf_images=convert_from_bytes(pdf_content, dpi=300,  
-                                  poppler_path='/usr/bin/')
+                                  poppler_path=dokcer_poppler_path)
     
     text=""
     for image in pdf_images:
@@ -59,6 +50,70 @@ async def resume_parsing_tempelate():
     Output the result as a JSON object with keys: education, skills, experience, projects, and years.
     """
     return PromptTemplate(template=resume_template, input_variables=["resume_text"])
+
+async def key_sections_tempelate():
+    key_sections_tempelate = """
+    As an expert technical interviewer, analyze the job requirements and candidate's resume to identify 
+    and describe key technical interview sections for a {job_role} position.
+    
+    Job Description:
+    {job_description}
+    
+    Candidate's Resume Information:
+    {resume_information}
+    
+    For each of these key interview sections:
+    - technical_skills
+    - system_design
+    - problem_solving
+    - domain_knowledge
+    - project_experience
+    
+    Provide:
+    1. A relevance score (1-10) based on job requirements and candidate profile
+    2. 3-5 key points that must be covered during the interview
+    3. List of specific required knowledge areas to assess
+    4. Summary of candidate's relevant experience from their resume
+    5. Suggested focus areas for the interviewer
+    
+    Format the response as a JSON object with the exact structure matching these keys:
+    {{
+        "section_name": {{
+            "relevance_score": integer,
+            "key_points": [string],
+            "required_knowledge": [string],
+            "candidate_experience": string,
+            "suggested_focus": string
+        }}
+    }}
+    """
+    return PromptTemplate(template=key_sections_tempelate, input_variables=["job_role","job_description", "resume_information"])
+
+async def questions_tempelate():
+    question_template = """
+    System:
+    You are an expert interviewer tasked with creating interview questions to assess a candidate's suitability for the role of {job_role}.
+
+    User:
+    Based on the relevant resume information, job description, and identified key sections, generate three questions for each key section. Each question should be one of the following types:
+    1. General question.
+    2. Technical question.
+    3. Scenario-based question.
+    4. Problem-solving question.
+    5. Programming or coding question.
+
+    Job Description:
+    {job_description}
+
+    Relevant Resume Information:
+    {resume_information}
+
+    Key Sections:
+    {key_sections}
+
+    Provide the output as a structured JSON object with sections as keys and questions as values.
+    """
+    return PromptTemplate(template=question_template, input_variables=["job_role", "job_description", "resume_information", "key_sections"])
 
 async def llm_config(model_name="command-r-plus-08-2024", temperature=0.1):
     llm = ChatCohere(cohere_api_key=cohere_api_key, 

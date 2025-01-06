@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.autentication import UserLogin, User
 from app.api.api_resonse import error_response, success_response
 from app.db.session import get_db_session
-from app.models.user import User as UserModel
+from app.models.db_models import User as UserModel
 from app.utils.authentication import verify_password, get_password_hash, create_access_token
 
 
