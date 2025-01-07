@@ -127,7 +127,7 @@ async def shutdown():
 app.include_router(auth_router, prefix=f"/api/v{api_version}", tags=["Authentication"])
 app.include_router(user_router, prefix=f"/api/v{api_version}", tags=["User Management"])
 app.include_router(
-    resume_router, prefix=f"/api/v{api_version}", tags=["Resume Parsing"]
+    resume_router, prefix=f"/api/v{api_version}", tags=["Interview"]
 )
 app.include_router(
     similarity_router, prefix=f"/api/v{api_version}", tags=["Text Similarity"]
