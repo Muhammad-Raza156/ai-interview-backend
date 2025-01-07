@@ -1,14 +1,12 @@
-
 from pdf2image import convert_from_bytes
 import pytesseract
 from langchain_core.prompts import PromptTemplate
 from app.core.config import settings
-from typing_extensions import Annotated, TypedDict
 from langchain_cohere import ChatCohere
 
 # Set Tesseract path
-pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
-cohere_api_key=settings.COHERE_API_KEY
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+cohere_api_key = settings.COHERE_API_KEY
 
 
 async def process_pdf(pdf_content):
@@ -22,19 +20,21 @@ async def process_pdf(pdf_content):
         str: The extracted text from the PDF.
 
     Converts PDF pages to images and then uses Tesseract OCR to extract
-    text from these images. Requires the pdf2image and pytesseract 
+    text from these images. Requires the pdf2image and pytesseract
     libraries, as well as a local installation of Tesseract OCR.
     """
-    #local_poppler_path = r"C:\Program Files\poppler-24.08.0\Library\bin"
+    # local_poppler_path = r"C:\Program Files\poppler-24.08.0\Library\bin"
     dokcer_poppler_path = "/usr/bin/"
-    pdf_images=convert_from_bytes(pdf_content, dpi=300,  
-                                  poppler_path=dokcer_poppler_path)
-    
-    text=""
+    pdf_images = convert_from_bytes(
+        pdf_content, dpi=300, poppler_path=dokcer_poppler_path
+    )
+
+    text = ""
     for image in pdf_images:
         text += pytesseract.image_to_string(image)
-    
+
     return text
+
 
 async def resume_parsing_tempelate():
     resume_template = """
@@ -50,6 +50,7 @@ async def resume_parsing_tempelate():
     Output the result as a JSON object with keys: education, skills, experience, projects, and years.
     """
     return PromptTemplate(template=resume_template, input_variables=["resume_text"])
+
 
 async def key_sections_tempelate():
     key_sections_tempelate = """
@@ -87,7 +88,11 @@ async def key_sections_tempelate():
         }}
     }}
     """
-    return PromptTemplate(template=key_sections_tempelate, input_variables=["job_role","job_description", "resume_information"])
+    return PromptTemplate(
+        template=key_sections_tempelate,
+        input_variables=["job_role", "job_description", "resume_information"],
+    )
+
 
 async def questions_tempelate():
     question_template = """
@@ -113,9 +118,19 @@ async def questions_tempelate():
 
     Provide the output as a structured JSON object with sections as keys and questions as values.
     """
-    return PromptTemplate(template=question_template, input_variables=["job_role", "job_description", "resume_information", "key_sections"])
+    return PromptTemplate(
+        template=question_template,
+        input_variables=[
+            "job_role",
+            "job_description",
+            "resume_information",
+            "key_sections",
+        ],
+    )
+
 
 async def llm_config(model_name="command-r-plus-08-2024", temperature=0.1):
-    llm = ChatCohere(cohere_api_key=cohere_api_key, 
-                     model=model_name, temperature=temperature)
+    llm = ChatCohere(
+        cohere_api_key=cohere_api_key, model=model_name, temperature=temperature
+    )
     return llm
