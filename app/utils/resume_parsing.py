@@ -95,35 +95,76 @@ async def key_sections_tempelate():
 
 
 async def questions_tempelate():
-    question_template = """
-    System:
-    You are an expert interviewer tasked with creating interview questions to assess a candidate's suitability for the role of {job_role}.
+    question_template =  """You are an expert technical interviewer for a {job_role} position. Generate a comprehensive set of interview questions based on the following information:
 
-    User:
-    Based on the relevant resume information, job description, and identified key sections, generate three questions for each key section. Each question should be one of the following types:
-    1. General question.
-    2. Technical question.
-    3. Scenario-based question.
-    4. Problem-solving question.
-    5. Programming or coding question.
+JOB DESCRIPTION:
+{job_description}
 
-    Job Description:
-    {job_description}
+CANDIDATE'S RESUME:
+{resume_data}
 
-    Relevant Resume Information:
-    {resume_information}
+INTERVIEW SECTIONS AND THEIR RELEVANCE:
+{interview_sections}
 
-    Key Sections:
-    {key_sections}
+Task: Generate specific interview questions for each section. For each question, include:
+1. The actual question
+2. Expected key points in the answer
+3. Difficulty level (Easy/Medium/Hard)
+4. Evaluation criteria
+5. Follow-up questions
 
-    Provide the output as a structured JSON object with sections as keys and questions as values.
-    """
+Guidelines for Different Question Types:
+
+TECHNICAL KNOWLEDGE QUESTIONS:
+- Focus on specific technologies mentioned in both resume and job description
+- Include questions about best practices and real-world applications
+- Cover both fundamental concepts and advanced topics
+
+SYSTEM DESIGN QUESTIONS:
+- Focus on scalability, performance, and architectural decisions
+- Include trade-off discussions
+- Relate to the scale mentioned in the job description
+
+PROBLEM-SOLVING QUESTIONS:
+- Include both algorithmic and logical reasoning questions
+- Focus on problem-solving approach rather than just the solution
+- Cover edge cases and optimization
+
+CODING CHALLENGE QUESTIONS:
+- Must include clear input/output examples
+- Should test both implementation and optimization skills
+- Cover important concepts like error handling and edge cases
+
+PROJECT DISCUSSION QUESTIONS:
+- Based on candidate's past projects from resume
+- Focus on technical decisions and trade-offs
+- Include questions about challenges and solutions
+
+For each section, generate 3 questions varying in difficulty.
+
+Return the response as a JSON object matching this exact structure:
+{{
+    "technical_knowledge": [
+        {{
+            "question": "string",
+            "expected_answer_points": ["string"],
+            "difficulty_level": "string",
+            "evaluation_criteria": ["string"],
+            "follow_up_questions": ["string"]
+        }}
+    ],
+    "system_design": [same structure],
+    "problem_solving": [same structure],
+    "coding_challenge": [same structure],
+    "project_discussion": [same structure]
+}}"""
+
     return PromptTemplate(
         template=question_template,
         input_variables=[
             "job_role",
             "job_description",
-            "resume_information",
+            "resume_data",
             "key_sections",
         ],
     )
