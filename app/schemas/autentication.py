@@ -3,9 +3,9 @@ from pydantic import BaseModel, EmailStr
 
 
 class User(BaseModel):
-    first_name: str | None = None
-    last_name: str | None = None
-    email: EmailStr | None = None
+    first_name: str 
+    last_name: str 
+    email: EmailStr 
     password: str
 
 

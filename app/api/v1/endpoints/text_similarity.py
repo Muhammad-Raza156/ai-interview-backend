@@ -1,9 +1,15 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends
 from sklearn.metrics.pairwise import cosine_similarity
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 import json
 import cohere
 
 from app.schemas.text_similarity import Job
+from app.db.session import get_db_session
+from app.models.db_models import JobDetails, Resume
+from app.utils.user_management import get_current_user
+from app.schemas.user_management import ViewUser
 from app.core.config import settings
 from app.api.api_resonse import error_response, success_response
 
@@ -30,17 +36,36 @@ def calculate_similarity(text1, text2):
 
 
 @similarity_router.post("/similarity")
-async def text_similarity(role: str = Form(...), description: str = Form(...), dificulty_level: str = Form(...), file: UploadFile = File(...)):
-    job = Job(role=role, description=description, difficulty_level=dificulty_level)
-    try:
-        job_description=job.description
-        if file.filename.endswith(".json"):
-            contents = await file.read()
-            data = json.loads(contents.decode("utf-8"))['data']
-        else:
-            raise HTTPException(status_code=400, detail="Invalid file format. Please upload a JSON file.")
-        
-        simialarity_score=calculate_similarity(job_description,data)
+async def text_similarity(current_user: ViewUser = Depends(get_current_user), 
+                          db: AsyncSession = Depends(get_db_session)):
+    user_id = current_user.user_id
+    stmt = select(JobDetails.role, 
+                  JobDetails.experience_level ,
+                  JobDetails.description).where(JobDetails.user_id == user_id)
+    result = await db.execute(stmt)
+    job_details = result.first()
+
+    if not job_details:
+        raise HTTPException(status_code=404, detail="Job details not found or not associated with current user")
+
+    role = job_details.role
+    dificulty_level = job_details.experience_level
+    description = job_details.description
+
+    stmt2 = select(Resume.parsed_sections).where(Resume.user_id == user_id)
+    result2 = await db.execute(stmt2)
+    resume = result2.first()
+
+    if not resume:
+        raise HTTPException(status_code=404, detail="Resume not found or not associated with current user")
+
+    data = resume.parsed_sections
+    # convert data to str 
+    data = " ".join(data)
+
+    try: 
+
+        simialarity_score=calculate_similarity(description,data)
 
         
         return success_response(data=simialarity_score)

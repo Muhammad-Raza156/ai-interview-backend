@@ -2,9 +2,10 @@ from datetime import timedelta
 import logging
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Form
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import EmailStr
 
 
 from app.schemas.autentication import UserLogin, User
@@ -30,7 +31,11 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 
 @auth_router.post("/Signup")
-async def signup(user: User, db: AsyncSession = Depends(get_db_session)):
+async def signup(first_name: str = Form(...), 
+                 last_name: str = Form(...), 
+                 email: EmailStr = Form(...), 
+                 password: str = Form(...), 
+                 db: AsyncSession = Depends(get_db_session)):
     """
     Registers a new user in the database.
 
@@ -49,7 +54,10 @@ async def signup(user: User, db: AsyncSession = Depends(get_db_session)):
     Returns:
         dict: A success message indicating successful registration.
     """
-
+    user = User(first_name=first_name, 
+                last_name=last_name, 
+                email=email, 
+                password=password)
     stmt = select(UserModel).where(UserModel.email == user.email)
     result = await db.execute(stmt)
     existing_user = result.scalar_one_or_none()
@@ -62,6 +70,8 @@ async def signup(user: User, db: AsyncSession = Depends(get_db_session)):
     hashed_password = get_password_hash(user.password)
     user_data = user.dict()
     user_data["password"] = hashed_password
+ 
+
     new_user = UserModel(**user_data)
     db.add(new_user)
 
