@@ -4,6 +4,13 @@ from langchain_core.prompts import PromptTemplate
 from app.core.config import settings
 from langchain_cohere import ChatCohere
 
+from gtts import gTTS
+import os
+import playsound as ps
+
+import speech_recognition as sr
+import threading
+
 # Set Tesseract path
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 cohere_api_key = settings.COHERE_API_KEY
@@ -109,9 +116,7 @@ INTERVIEW SECTIONS AND THEIR RELEVANCE:
 Task: Generate specific interview questions for each section. For each question, include:
 1. The actual question
 2. Expected key points in the answer
-3. Difficulty level (Easy/Medium/Hard)
-4. Evaluation criteria
-5. Follow-up questions
+3. Answer to the question
 
 Guidelines for Different Question Types:
 
@@ -135,12 +140,7 @@ CODING CHALLENGE QUESTIONS:
 - Should test both implementation and optimization skills
 - Cover important concepts like error handling and edge cases
 
-PROJECT DISCUSSION QUESTIONS:
-- Based on candidate's past projects from resume
-- Focus on technical decisions and trade-offs
-- Include questions about challenges and solutions
-
-For each section, generate 3 questions varying in difficulty.
+For each section, generate 2 questions varying in difficulty.
 
 Return the response as a JSON object matching this exact structure:
 {{
@@ -148,15 +148,12 @@ Return the response as a JSON object matching this exact structure:
         {{
             "question": "string",
             "expected_answer_points": ["string"],
-            "difficulty_level": "string",
-            "evaluation_criteria": ["string"],
-            "follow_up_questions": ["string"]
+            "answer": ["string"],
         }}
     ],
     "system_design": [same structure],
     "problem_solving": [same structure],
     "coding_challenge": [same structure],
-    "project_discussion": [same structure]
 }}"""
 
     return PromptTemplate(
@@ -169,9 +166,171 @@ Return the response as a JSON object matching this exact structure:
         ],
     )
 
+async def evaluation_tempelate():
+    evaluation_template = """
+You are an expert technical interviewer and evaluator. Your task is to evaluate a candidate's response to an interview question 
+with detailed feedback and scoring.
+
+Context:
+
+Question Asked: {question}
+
+Model Answer (Key Points):
+{model_answer}
+
+Candidate's Response:
+{candidate_answer}
+
+Please evaluate the response considering:
+1. Technical accuracy
+2. Completeness of the answer
+3. Clarity of explanation
+4. Practical understanding
+5. Proper use of technical terminology
+6. Structured thinking
+7. Real-world application awareness
+
+Important Instructions:
+- Score should be justified with specific examples from the response
+- Provide actionable feedback for improvement
+- Highlight both strengths and weaknesses
+- Consider partial credit for partially correct explanations
+- Account for different valid approaches to the solution
+- Consider the expected experience level when evaluating
+- Identify any bonus points for exceptional insights
+
+{{format_instructions}}
+
+Remember to:
+1. Be objective and fair in scoring
+2. Provide specific examples from the response
+3. Give actionable improvement suggestions
+4. Acknowledge alternative valid approaches
+5. Consider both theoretical understanding and practical application
+6. Evaluate communication clarity separately from technical accuracy
+
+Think through your evaluation step by step:
+1. First, identify the key points covered and missed
+2. Then, assess the technical accuracy of each point
+3. Consider the clarity and structure of the explanation
+4. Evaluate practical understanding demonstrated
+5. Compare against the model answer
+6. Factor in the experience level expected
+7. Calculate the final score
+8. Formulate specific feedback points
+
+Your evaluation should be constructive, actionable, and help the candidate improve, regardless of their performance level.
+
+Return the response as a JSON object matching this exact structure:
+{{
+    "score": float,
+    "feedback": {{
+        "type": string,
+        "points": [string],
+        "suggestions": [string],
+        "missing_points": [string]
+    }}
+}}
+"""
+
+    return PromptTemplate(
+        template=evaluation_template,
+        input_variables=[
+            "question",
+            "model_answer",
+            "candidate_answer",
+        ],
+    )
+
 
 async def llm_config(model_name="command-r-plus-08-2024", temperature=0.1):
     llm = ChatCohere(
         cohere_api_key=cohere_api_key, model=model_name, temperature=temperature
     )
     return llm
+
+
+def tts_speak(text: str, lang: str = "en"):
+    """
+    Converts text to speech and plays it.
+
+    Args:
+        text (str): The text to convert to speech.
+        lang (str): The language of the text (default is English).
+    """
+    try:
+      # Generate speech from text
+      tts = gTTS(text=text, lang=lang)
+        
+      #tts = gTTS(text)
+      audio_file = "output.mp3"
+      tts.save(audio_file)
+
+      # Play the audio
+      ps.playsound(audio_file)
+
+        # Clean up the temporary file
+      os.remove(audio_file)
+
+    except Exception as e:
+        print(f"Error in TTS: {e}")
+
+    
+
+def record_audio_with_stop():
+    """
+    Function to record audio until the 's' key is pressed.
+    Uses Google Speech-to-Text API to transcribe the audio.
+    """
+
+    r = sr.Recognizer()
+    global stop_recording
+    stop_recording = False
+    recognized_text = ""
+
+    def listen_for_stop():
+        """Background thread to listen for 's' key press to stop recording."""
+        global stop_recording
+        import keyboard  # Import here to avoid issues with threading
+        print("Press 's' to stop recording.")
+        while True:
+            if keyboard.is_pressed("s"):
+                stop_recording = True
+                break
+
+    # Start the background thread
+    stop_thread = threading.Thread(target=listen_for_stop, daemon=True)
+    stop_thread.start()
+
+    print("Listening...")
+
+    while not stop_recording:
+        try:
+            # Use the microphone as source for input
+            with sr.Microphone() as source2:
+                # Wait for a second to let the recognizer
+                # adjust the energy threshold based on
+                # the surrounding noise level
+                r.adjust_for_ambient_noise(source2, duration=0.2)
+                
+                # Listens for the user's input
+                audio2 = r.listen(source2, timeout=5, phrase_time_limit=10)
+                
+                # Using Google to recognize audio
+                MyText = r.recognize_google(audio2)
+                MyText = MyText.lower()
+
+                #print("Did you say:")
+                print(MyText)
+                recognized_text += MyText + " "
+
+        except sr.WaitTimeoutError:
+            print("Listening timeout - waiting for speech...")        
+        except sr.RequestError as e:
+            print(f"Could not request results: {e}")
+            
+        except sr.UnknownValueError:
+            print("Unknown error occurred")
+
+    print("Recording stopped.")
+    return recognized_text.strip()

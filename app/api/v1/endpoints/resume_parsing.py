@@ -4,6 +4,7 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from supabase import create_client, Client
+from datetime import datetime
 from langchain_core.output_parsers import JsonOutputParser
 import logging
 
@@ -12,7 +13,12 @@ logger = logging.getLogger(__name__)
 from app.core.config import settings
 from app.db.session import get_db_session
 from app.schemas.user_management import ViewUser
-from app.models.db_models import Resume
+from app.models.db_models import (
+    Resume, 
+    InterviewSession,
+    Question,
+    Answer
+) 
 from app.utils.user_management import get_current_user
 from app.schemas.resume_parsing import ParsedResume
 from app.api.api_resonse import success_response
@@ -21,12 +27,15 @@ from app.utils.resume_parsing import (
     resume_parsing_tempelate,
     llm_config,
     key_sections_tempelate,
-    questions_tempelate
+    questions_tempelate,
+    tts_speak,
+    record_audio_with_stop,
+    evaluation_tempelate
 )
 from app.models.db_models import JobDetails
 from app.models.db_models import ResumeKeySections
 
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -55,18 +64,51 @@ class InterviewSections(BaseModel):
 
 class QuestionDetail(BaseModel):
     question: str = Field(..., description="The interview question")
+    model_answer: str = Field(
+        ...,
+        description="Complete model answer that demonstrates ideal response",
+        min_length=50
+    )
     expected_answer_points: List[str] = Field(..., description="Key points that should be covered in the answer")
-    difficulty_level: str = Field(..., description="Easy/Medium/Hard")
-    evaluation_criteria: List[str] = Field(..., description="Criteria to evaluate the answer")
-    follow_up_questions: List[str] = Field(..., description="Potential follow-up questions")
 
 class SectionQuestions(BaseModel):
     technical_knowledge: List[QuestionDetail] = Field(..., description="Questions about technical skills and knowledge")
     system_design: List[QuestionDetail] = Field(..., description="System design and architecture questions")
     problem_solving: List[QuestionDetail] = Field(..., description="Algorithmic and logical problem-solving questions")
     coding_challenge: List[QuestionDetail] = Field(..., description="Programming implementation questions")
-    project_discussion: List[QuestionDetail] = Field(..., description="Questions about past projects and experience")
 
+
+class Feedback(BaseModel):
+    type: str = Field(
+        ..., 
+        description="Type of feedback: 'positive' or 'negative'",
+        pattern='^(positive|negative)$'
+    )
+    points: List[str] = Field(
+        ...,
+        description="List of feedback points",
+        min_items=1
+    )
+    suggestions: Optional[List[str]] = Field(
+        default=None,
+        description="Improvement suggestions when feedback is negative"
+    )
+    missing_points: Optional[List[str]] = Field(
+        default=None,
+        description="Points that were missing from the answer"
+    )
+
+class EvaluationResult(BaseModel):
+    score: float = Field(
+        ...,
+        description="Score out of 10",
+        ge=0,
+        le=10
+    )
+    feedback: Feedback = Field(
+        ...,
+        description="Structured feedback containing positive/negative points and suggestions"
+    )
 
 file_router = APIRouter()
 
@@ -347,23 +389,33 @@ async def key_sections(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@file_router.post("/questions")
+@file_router.post("/interview-session")
 async def questions(
     current_user: ViewUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
+    
     """
-    Generates and retrieves interview questions for a job application.
+    Generates interview questions and evaluates candidate responses.
 
-    This endpoint processes a submitted resume and job details to generate
-    interview questions based on the resume and job details like job role , job description.
+    This endpoint retrieves the job details and resume associated with the current user
+    to generate interview questions relevant to the job role. It uses language models 
+    to generate questions and model answers for each interview section. The questions 
+    are presented to the candidate, and their responses are recorded and evaluated 
+    against the model answers.
 
     Args:
         current_user (ViewUser): The current authenticated user.
         db (AsyncSession): The database session dependency.
 
     Returns:
-        JSON: A success response containing the job role and interview questions
+        JSON: A success response containing the job role, interview questions, 
+              and evaluation results for the candidate's responses.
+
+    Raises:
+        HTTPException: If job details, resume, or key sections are not found or 
+                       associated with the current user, or if there is an error 
+                       during processing.
     """
 
     user_id = current_user.user_id
@@ -403,12 +455,16 @@ async def questions(
             detail="Key sections not found for current user or not generated",
         )
     
-    queations_prompt = await questions_tempelate()
+    questions_prompt = await questions_tempelate()
     llm = await llm_config(temperature=0.5)
     OutputParser  = JsonOutputParser(pydantic_object=SectionQuestions)
 
+    evaluation_prompt = await evaluation_tempelate()
+    evaluation_llm = await llm_config(temperature=0.1)
+    evaluation_parser = JsonOutputParser(pydantic_object=EvaluationResult)
+
     try:
-        chain2 = queations_prompt | llm | OutputParser
+        chain2 = questions_prompt | llm | OutputParser
         # run the chain
         questions = await chain2.ainvoke(
             {
@@ -420,10 +476,68 @@ async def questions(
         )
 
         logger.info("Questions generated successfully")
-        data = {"job_role": job_details.role, "interview_questions": questions}
+
+        sections= questions.keys()
+        result=[]
+        print("Session started")
+        session = InterviewSession(
+            user_id=user_id,
+            job_role=job_details.role,
+            status='active'
+        )
+        db.add(session)
+        await db.commit()
+        await db.refresh(session)
+        for section in sections:
+            print("session in progress")
+            tts_speak(f"Section: {section}")
+            for i in range(len(questions.get(section))):
+                text=questions.get(section)[i]["question"]
+                model_answer=questions.get(section)[i]["answer"]
+
+                if isinstance(model_answer, list):
+                    model_answer = "\n".join(model_answer)
+
+                question = Question(
+                session_id=session.id,
+                question_text=text,
+                model_answer=model_answer
+            )
+                db.add(question)
+                await db.commit()
+                await db.refresh(question)
+                print(text)
+                tts_speak(text)
+                print("Starting audio recording session...")
+                candidate_answer=record_audio_with_stop()
+                evaluation_chain = evaluation_prompt | evaluation_llm | evaluation_parser
+                evaluation_result = await evaluation_chain.ainvoke(
+                    {
+                        "question": text,
+                        "candidate_answer": candidate_answer,
+                        "model_answer": model_answer,
+                    }
+                )
+                score = evaluation_result["score"]
+                feedback = evaluation_result["feedback"]
+                answer = Answer(
+                session_id=session.id,
+                question_id=question.id,
+                user_answer=candidate_answer,
+                score=int(score)
+            )
+                db.add(answer)
+                await db.commit()
+                await db.refresh(question)
+                result.append(evaluation_result)
+
+        session.status = 'completed'
+        await db.commit()
+
+        data = {"job_role": job_details.role, "interview_questions": questions, "evaluation_result": result}
         #logger.info("data saved successfully to database")
         return success_response(data=data)
 
     except Exception as e:
         logger.error(f"Error generating questions: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error generating questions")
+        raise HTTPException(status_code=500, detail=str(e))

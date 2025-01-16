@@ -2,10 +2,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from sklearn.metrics.pairwise import cosine_similarity
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import json
 import cohere
 
-from app.schemas.text_similarity import Job
 from app.db.session import get_db_session
 from app.models.db_models import JobDetails, Resume
 from app.utils.user_management import get_current_user
@@ -38,6 +36,26 @@ def calculate_similarity(text1, text2):
 @similarity_router.post("/similarity")
 async def text_similarity(current_user: ViewUser = Depends(get_current_user), 
                           db: AsyncSession = Depends(get_db_session)):
+    """
+    Retrieves the job details and resume associated with the current user.
+
+    This endpoint retrieves the job role, experience level, and description of the job
+    associated with the current user. It also retrieves the parsed sections of the resume
+    associated with the current user. The endpoint then calculates the similarity between
+    the job description and the parsed sections of the resume and returns the similarity score.
+
+    Args:
+        current_user (ViewUser): The current authenticated user.
+        db (AsyncSession): The database session dependency.
+
+    Returns:
+        JSON: A success response containing the similarity score if successfully retrieved.
+
+    Raises:
+        HTTPException: If job details or resume are not found or associated with the current user,
+                       or if there is a server error during processing.
+    """
+
     user_id = current_user.user_id
     stmt = select(JobDetails.role, 
                   JobDetails.experience_level ,
@@ -49,7 +67,7 @@ async def text_similarity(current_user: ViewUser = Depends(get_current_user),
         raise HTTPException(status_code=404, detail="Job details not found or not associated with current user")
 
     role = job_details.role
-    dificulty_level = job_details.experience_level
+    experience_level = job_details.experience_level
     description = job_details.description
 
     stmt2 = select(Resume.parsed_sections).where(Resume.user_id == user_id)

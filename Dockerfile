@@ -13,6 +13,8 @@ RUN apt-get install -y libxrender-dev
 RUN apt-get install -y build-essential
 RUN apt-get install -y gcc
 RUN apt-get install -y python3-dev
+RUN apt-get install -y libportaudio2 
+RUN apt-get install -y portaudio19-dev
 RUN apt-get clean
 
 # set environment variables
