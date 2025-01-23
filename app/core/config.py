@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str
     REDIS_HOST: str
     REDIS_PORT: int
+    REDIS_PASSWORD: str
+    REDIS_URL: str
     
 
     class Config:

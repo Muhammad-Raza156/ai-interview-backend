@@ -112,14 +112,22 @@ class EvaluationResult(BaseModel):
     )
 
 
-redis_client = aioredis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=0, decode_responses=True)
+# redis_client = aioredis.Redis(
+#     host=settings.REDIS_HOST, 
+#     port=settings.REDIS_PORT, 
+#     password=settings.REDIS_PASSWORD, db=0, 
+#     decode_responses=True)
+
+redis_client = aioredis.from_url(
+    settings.REDIS_URL,
+    decode_responses=True,  # Enable automatic decoding of responses
+    db=0                    # Specify the database to use (default is 0)
+)
 CACHE_EXPIRATION = 3600
 
 file_router = APIRouter()
 
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
-
-EMBEDDING_DIMENSION = 1024
 
 
 @file_router.post("/submit-application")
