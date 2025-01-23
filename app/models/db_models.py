@@ -159,4 +159,5 @@ class Answer(Base):
     )
     user_answer = Column(Text, nullable=False)
     score = Column(Integer, nullable=False)
+    feedback = Column(JSON, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())

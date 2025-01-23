@@ -30,13 +30,17 @@ from app.utils.resume_parsing import (
     questions_tempelate,
     tts_speak,
     record_audio_with_stop,
-    evaluation_tempelate
+    evaluation_tempelate,
+    get_embedding,
+    calculate_similarity_score
 )
 from app.models.db_models import JobDetails
 from app.models.db_models import ResumeKeySections
 
 from typing import List, Optional
 from pydantic import BaseModel, Field
+
+from redis import asyncio as aioredis
 
 
 class KeySectionInfo(BaseModel):
@@ -110,10 +114,16 @@ class EvaluationResult(BaseModel):
         description="Structured feedback containing positive/negative points and suggestions"
     )
 
+
+redis_client = aioredis.Redis(host='redis', port=6379, db=0, decode_responses=True)
+CACHE_EXPIRATION = 3600
+
 file_router = APIRouter()
 
 # model_name = "command-r-plus-08-2024"
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+
+EMBEDDING_DIMENSION = 1024
 
 
 @file_router.post("/submit-application")
@@ -389,19 +399,98 @@ async def key_sections(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@file_router.post("/generate-interview-questions")
+async def generate_questions(
+    current_user: ViewUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """
+    Generates interview questions based on job details and resume.
+    Stores the generated questions in Redis cache for later use.
+    """
+    logger.info("Generating interview questions...")
+    user_id = current_user.user_id
+
+    job_query = select(JobDetails).where(JobDetails.user_id == current_user.user_id)
+    job_result = await db.execute(job_query)
+    job_details = job_result.scalar_one_or_none()
+
+    if not job_details:
+        logger.error("Job details not found or not associated with current user")
+        raise HTTPException(
+            status_code=404,
+            detail="Job details not found or not associated with current user",
+        )
+
+    resume_query = select(Resume).where(Resume.user_id == user_id)
+    resume_result = await db.execute(resume_query)
+    resume = resume_result.scalar_one_or_none()
+
+    if not resume:
+        logger.error("Resume not found or not associated with current user")
+        raise HTTPException(status_code=404, detail="Resume not found")
+    
+    resume_data = (
+        json.loads(resume.parsed_sections)
+        if isinstance(resume.parsed_sections, str)
+        else resume.parsed_sections
+    )
+
+    existing_sections_query = select(ResumeKeySections).where(
+        ResumeKeySections.resume_id == resume.id,
+        ResumeKeySections.job_id == job_details.id,
+    )
+    existing_sections = await db.execute(existing_sections_query)
+    existing_key_sections = existing_sections.scalar_one_or_none()
+
+    if not existing_key_sections:
+        raise HTTPException(status_code=404, detail="Key sections not found")
+    
+    try:
+        questions_prompt = await questions_tempelate()
+        llm = await llm_config(temperature=0.7)
+        OutputParser  = JsonOutputParser(pydantic_object=SectionQuestions)
+
+        chain = questions_prompt | llm | OutputParser
+        questions = await chain.ainvoke({
+            "job_role": job_details.role,
+            "job_description": job_details.description,
+            "resume_data": resume_data,
+            "interview_sections": existing_key_sections.key_sections,
+        })
+
+        cache_key = f"interview_questions:{user_id}"
+        await redis_client.setex(
+            cache_key,
+            CACHE_EXPIRATION,
+            json.dumps({
+                "questions": questions,
+                "job_role": job_details.role
+            })
+        )
+
+        return success_response(data={
+            "job_role": job_details.role,
+            "interview_questions": questions
+        })
+
+    except Exception as e:
+        logger.error(f"Error generating questions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 @file_router.post("/interview-session")
-async def questions(
+async def conduct_interview(
     current_user: ViewUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
     
     """
-    Generates interview questions and evaluates candidate responses.
+    Conducts interview session using cached questions from Redis.
+    Records and evaluates candidate responses.
 
-    This endpoint retrieves the job details and resume associated with the current user
-    to generate interview questions relevant to the job role. It uses language models 
-    to generate questions and model answers for each interview section. The questions 
-    are presented to the candidate, and their responses are recorded and evaluated 
+    The questions are presented to the candidate, and their responses are recorded and evaluated 
     against the model answers.
 
     Args:
@@ -420,69 +509,29 @@ async def questions(
 
     user_id = current_user.user_id
 
-    job_query = select(JobDetails).where(JobDetails.user_id == current_user.user_id)
-    job_result = await db.execute(job_query)
-    job_details = job_result.scalar_one_or_none()
-
-    if not job_details:
-        logger.error("Job details not found or not associated with current user")
-
-    stmt = select(Resume).where(Resume.user_id == user_id)
-    resume_result = await db.execute(stmt)
-    resume = resume_result.scalar_one_or_none()
-    if not resume:
-        logger.error("Resume not found for curent user or not uploaded")
-        raise HTTPException(
-            status_code=404, detail="Resume not found for curent user or not uploaded"
-        )
-
-    resume_data = (
-        json.loads(resume.parsed_sections)
-        if isinstance(resume.parsed_sections, str)
-        else resume.parsed_sections
-    )
-
-    existing_sections_query = select(ResumeKeySections).where(
-        ResumeKeySections.resume_id == resume.id,
-        ResumeKeySections.job_id == job_details.id,
-    )
-    existing_sections = await db.execute(existing_sections_query)
-    existing_key_sections = existing_sections.scalar_one_or_none()
-
-    if not existing_key_sections:
-        raise HTTPException(
-            status_code=404,
-            detail="Key sections not found for current user or not generated",
-        )
-    
-    questions_prompt = await questions_tempelate()
-    llm = await llm_config(temperature=0.5)
-    OutputParser  = JsonOutputParser(pydantic_object=SectionQuestions)
+    cache_key = f"interview_questions:{user_id}"
+    cached_data = await redis_client.get(cache_key)
 
     evaluation_prompt = await evaluation_tempelate()
-    evaluation_llm = await llm_config(temperature=0.1)
+    evaluation_llm = await llm_config(temperature=0.3)
     evaluation_parser = JsonOutputParser(pydantic_object=EvaluationResult)
 
     try:
-        chain2 = questions_prompt | llm | OutputParser
-        # run the chain
-        questions = await chain2.ainvoke(
-            {
-                "job_role": job_details.role,
-                "job_description": job_details.description,
-                "resume_data": resume_data,
-                "interview_sections": existing_key_sections.key_sections,
-            }
-        )
-
-        logger.info("Questions generated successfully")
+        if not cached_data:
+            raise HTTPException(
+                status_code=404,
+                detail="Interview questions not found. Please generate questions first."
+            )
+        
+        cached_data = json.loads(cached_data)
+        questions = cached_data["questions"]
 
         sections= questions.keys()
         result=[]
         print("Session started")
         session = InterviewSession(
             user_id=user_id,
-            job_role=job_details.role,
+            job_role=cached_data["job_role"],
             status='active'
         )
         db.add(session)
@@ -497,19 +546,25 @@ async def questions(
 
                 if isinstance(model_answer, list):
                     model_answer = "\n".join(model_answer)
-
+                
+                #model_answer_embedding = get_embedding(model_answer)
                 question = Question(
                 session_id=session.id,
                 question_text=text,
                 model_answer=model_answer
             )
+                
                 db.add(question)
                 await db.commit()
                 await db.refresh(question)
+
                 print(text)
                 tts_speak(text)
                 print("Starting audio recording session...")
                 candidate_answer=record_audio_with_stop()
+
+                #candidate_answer_embedding = get_embedding(candidate_answer)
+
                 evaluation_chain = evaluation_prompt | evaluation_llm | evaluation_parser
                 evaluation_result = await evaluation_chain.ainvoke(
                     {
@@ -519,12 +574,17 @@ async def questions(
                     }
                 )
                 score = evaluation_result["score"]
+                # score = calculate_similarity_score(
+                #     model_answer_embedding, 
+                #     candidate_answer_embedding
+                #     )
                 feedback = evaluation_result["feedback"]
                 answer = Answer(
                 session_id=session.id,
                 question_id=question.id,
                 user_answer=candidate_answer,
-                score=int(score)
+                score=int(score),
+                feedback=json.dumps(feedback)
             )
                 db.add(answer)
                 await db.commit()
@@ -534,8 +594,12 @@ async def questions(
         session.status = 'completed'
         await db.commit()
 
-        data = {"job_role": job_details.role, "interview_questions": questions, "evaluation_result": result}
-        #logger.info("data saved successfully to database")
+        data = {
+            "job_role": cached_data["job_role"], 
+            "interview_questions": questions, 
+            "evaluation_result": result
+            }
+        logger.info("data saved successfully to database")
         return success_response(data=data)
 
     except Exception as e:

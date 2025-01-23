@@ -9,6 +9,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     env_file: 
       - .env
     environment:
@@ -35,6 +37,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  redis:
+      image: redis:7-alpine
+      restart: always
+      ports:
+        - "6379:6379"
+      networks:
+        - app_network
+      healthcheck:
+        test: ["CMD", "redis-cli", "ping"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
 
 networks:
   app_network:

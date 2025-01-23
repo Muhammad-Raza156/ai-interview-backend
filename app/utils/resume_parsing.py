@@ -3,6 +3,7 @@ import pytesseract
 from langchain_core.prompts import PromptTemplate
 from app.core.config import settings
 from langchain_cohere import ChatCohere
+from langchain_cohere import CohereEmbeddings
 
 from gtts import gTTS
 import os
@@ -10,6 +11,10 @@ import playsound as ps
 
 import speech_recognition as sr
 import threading
+
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+from typing import List
 
 # Set Tesseract path
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
@@ -84,7 +89,7 @@ async def key_sections_tempelate():
     4. Summary of candidate's relevant experience from their resume
     5. Suggested focus areas for the interviewer
     
-    Format the response as a JSON object with the exact structure matching these keys:
+    Format the response as a JSON object with the exact structure matching these keys with indentation of 4 spaces:
     {{
         "section_name": {{
             "relevance_score": integer,
@@ -142,7 +147,7 @@ CODING CHALLENGE QUESTIONS:
 
 For each section, generate 2 questions varying in difficulty.
 
-Return the response as a JSON object matching this exact structure:
+Return the response as a JSON object matching this exact structure with indentation of 4 spaces:
 {{
     "technical_knowledge": [
         {{
@@ -221,7 +226,7 @@ Think through your evaluation step by step:
 
 Your evaluation should be constructive, actionable, and help the candidate improve, regardless of their performance level.
 
-Return the response as a JSON object matching this exact structure:
+Return the response as a JSON object matching this exact structure with indentation of 4 spaces:
 {{
     "score": float,
     "feedback": {{
@@ -334,3 +339,41 @@ def record_audio_with_stop():
 
     print("Recording stopped.")
     return recognized_text.strip()
+
+embeddings = CohereEmbeddings(cohere_api_key=cohere_api_key, 
+                             model="embed-multilingual-v3.0")
+
+async def get_embedding(text: str) -> list[float]:
+    """Generate embedding using Cohere AI embedding model."""
+    try:
+        # Generate embeddings using Langchain's CohereEmbeddings
+        embedding = await embeddings.aembed_query(text)
+        return embedding
+    
+    except Exception as e:
+        print(f"Error generating embedding: {str(e)}")
+        raise
+
+async def calculate_similarity_score(vec1: List[float], vec2: List[float]) -> float:
+    """
+    Calculate cosine similarity between two vectors using sklearn and convert to a 0-10 score.
+    
+    Args:
+        vec1 (List[float]): First vector
+        vec2 (List[float]): Second vector
+        
+    Returns:
+        float: Similarity score on a scale of 0-10, rounded to 2 decimal places
+    """
+    # Reshape vectors for sklearn's cosine_similarity function
+    # cosine_similarity expects 2D arrays of shape (n_samples, n_features)
+    v1 = np.array(vec1).reshape(1, -1)
+    v2 = np.array(vec2).reshape(1, -1)
+    
+    # Calculate cosine similarity
+    cos_sim = cosine_similarity(v1, v2)[0][0]  # Extract scalar value from 2D array
+    
+    # Convert similarity (-1 to 1) to a 0-10 score
+    score = ((cos_sim + 1) / 2) * 10
+    
+    return round(score, 2)
