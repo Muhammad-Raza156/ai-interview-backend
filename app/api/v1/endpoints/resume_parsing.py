@@ -30,9 +30,7 @@ from app.utils.resume_parsing import (
     questions_tempelate,
     tts_speak,
     record_audio_with_stop,
-    evaluation_tempelate,
-    get_embedding,
-    calculate_similarity_score
+    evaluation_tempelate
 )
 from app.models.db_models import JobDetails
 from app.models.db_models import ResumeKeySections
@@ -115,7 +113,7 @@ class EvaluationResult(BaseModel):
     )
 
 
-redis_client = aioredis.Redis(host='redis', port=6379, db=0, decode_responses=True)
+redis_client = aioredis.Redis(host=settings.REDIS_HOST, port=settings.REDIS_PORT, db=0, decode_responses=True)
 CACHE_EXPIRATION = 3600
 
 file_router = APIRouter()

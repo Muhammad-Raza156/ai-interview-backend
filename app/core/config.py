@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     DB_URL: str
     SUPABASE_URL: str
     SUPABASE_KEY: str
+    REDIS_HOST: str
+    REDIS_PORT: int
     
 
     class Config:

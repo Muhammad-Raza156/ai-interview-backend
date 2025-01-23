@@ -16,6 +16,8 @@ services:
     environment:
       - database_url=${DATABASE_URL}
       - cohere_api_key=${COHERE_API_KEY}
+      - redis_host=${REDIS_HOST}
+      - redis_port=${REDIS_PORT}
     networks:
       - app_network
 
