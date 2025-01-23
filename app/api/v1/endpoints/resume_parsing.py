@@ -4,7 +4,6 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from supabase import create_client, Client
-from datetime import datetime
 from langchain_core.output_parsers import JsonOutputParser
 import logging
 
@@ -118,7 +117,6 @@ CACHE_EXPIRATION = 3600
 
 file_router = APIRouter()
 
-# model_name = "command-r-plus-08-2024"
 supabase: Client = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
 EMBEDDING_DIMENSION = 1024
@@ -159,10 +157,11 @@ async def submit_application(
         raise HTTPException(
             status_code=400, detail="Only PDF files are allowed for the resume."
         )
-    # save pdf to bucket on supabase
+    
 
     user_id = current_user.user_id
 
+    # save pdf to bucket on supabase
     file_name = f"{user_id}_{file.filename}"
     folder_path = f"resumes/users/{user_id}/"
 
@@ -403,9 +402,25 @@ async def generate_questions(
     db: AsyncSession = Depends(get_db_session),
 ):
     """
-    Generates interview questions based on job details and resume.
-    Stores the generated questions in Redis cache for later use.
+    Generates interview questions for the current user's job application.
+
+    This function generates a set of interview questions based on the user's job details,
+    resume data, and existing key sections. It utilizes a language model to generate
+    questions tailored to the job role and description, and caches the generated questions
+    for the current user.
+
+    Args:
+        current_user (ViewUser): The current authenticated user.
+        db (AsyncSession): The database session dependency.
+
+    Returns:
+        JSON: A success response containing the job role and generated interview questions.
+
+    Raises:
+        HTTPException: If job details, resume, or key sections are not found for the current user,
+                       or if there is an error during question generation.
     """
+
     logger.info("Generating interview questions...")
     user_id = current_user.user_id
 
@@ -483,26 +498,24 @@ async def conduct_interview(
     current_user: ViewUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ):
-    
-    """
-    Conducts interview session using cached questions from Redis.
-    Records and evaluates candidate responses.
 
-    The questions are presented to the candidate, and their responses are recorded and evaluated 
-    against the model answers.
+    """
+    Conducts an interview session for the current user based on pre-generated questions.
+
+    This endpoint initiates an interview session using cached interview questions for the
+    authenticated user. It evaluates the user's answers against model answers to compute 
+    scores and feedback. The session details, including questions, answers, scores, and 
+    feedback, are stored in the database.
 
     Args:
         current_user (ViewUser): The current authenticated user.
         db (AsyncSession): The database session dependency.
 
     Returns:
-        JSON: A success response containing the job role, interview questions, 
-              and evaluation results for the candidate's responses.
+        JSON: A success response containing the job role, interview questions, and evaluation results.
 
     Raises:
-        HTTPException: If job details, resume, or key sections are not found or 
-                       associated with the current user, or if there is an error 
-                       during processing.
+        HTTPException: If interview questions are not found in the cache, or if there is an error during processing.
     """
 
     user_id = current_user.user_id
@@ -544,8 +557,7 @@ async def conduct_interview(
 
                 if isinstance(model_answer, list):
                     model_answer = "\n".join(model_answer)
-                
-                #model_answer_embedding = get_embedding(model_answer)
+
                 question = Question(
                 session_id=session.id,
                 question_text=text,
@@ -561,8 +573,6 @@ async def conduct_interview(
                 print("Starting audio recording session...")
                 candidate_answer=record_audio_with_stop()
 
-                #candidate_answer_embedding = get_embedding(candidate_answer)
-
                 evaluation_chain = evaluation_prompt | evaluation_llm | evaluation_parser
                 evaluation_result = await evaluation_chain.ainvoke(
                     {
@@ -572,10 +582,6 @@ async def conduct_interview(
                     }
                 )
                 score = evaluation_result["score"]
-                # score = calculate_similarity_score(
-                #     model_answer_embedding, 
-                #     candidate_answer_embedding
-                #     )
                 feedback = evaluation_result["feedback"]
                 answer = Answer(
                 session_id=session.id,
