@@ -45,7 +45,7 @@ services:
   worker:
     build: .
     container_name: celery_worker
-    command: ["celery", "-A", "app.core.celery.celery_app", "worker", "--loglevel=info", "--concurrency=3"]
+    command: ["celery", "-A", "app.core.celery.celery_app", "worker", "--loglevel=info"]
     volumes:
       - .:/app
     depends_on:
