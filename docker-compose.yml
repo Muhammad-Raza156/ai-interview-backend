@@ -19,6 +19,7 @@ services:
       - redis_host=${REDIS_HOST}
       - redis_port=${REDIS_PORT}
       - redis_password=${REDIS_PASSWORD}
+      - redis_url=${REDIS_URL}
     networks:
       - app_network
 
@@ -55,6 +56,7 @@ services:
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=${REDIS_PORT}
       - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_URL=${REDIS_URL}
     networks:
       - app_network
 
