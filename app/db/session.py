@@ -1,13 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
 
 
-database_url = f"postgresql+asyncpg://postgres.reyyarznpztvshewnmji:{os.getenv('DB_PASSWORD')}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
+database_url = f"postgresql+asyncpg://postgres.reyyarznpztvshewnmji:{settings.DB_PASSWORD}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
 engine = create_async_engine(database_url, echo=True)
 
 AsyncSessionLocal = sessionmaker(
@@ -28,3 +24,5 @@ async def get_db_session():
             yield session
         finally:
             await session.close()
+
+

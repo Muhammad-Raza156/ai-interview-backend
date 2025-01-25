@@ -10,6 +10,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 from app.core.config import settings
+from app.core.celery import celery_app
+from app.core.tasks import process_file
 from app.db.session import get_db_session
 from app.schemas.user_management import ViewUser
 from app.models.db_models import (
@@ -23,7 +25,7 @@ from app.schemas.resume_parsing import ParsedResume
 from app.api.api_resonse import success_response
 from app.utils.resume_parsing import (
     process_pdf,
-    resume_parsing_tempelate,
+    resume_parsing_template,
     llm_config,
     key_sections_tempelate,
     questions_tempelate,
@@ -143,22 +145,24 @@ async def submit_application(
     db: AsyncSession = Depends(get_db_session),
 ):
     """
-    Submits an application for a job, given the job role, industry, company, description, interview type, experience level, and a PDF file of the resume.
+    Submits a job application with a resume in PDF format and returns the public URL of the uploaded file.
 
-    Args:
-        job_role (str): The role of the job.
-        industry (str): The industry of the job.
-        company (str): The company of the job.
-        description (str): The description of the job.
-        interview_type (str): The type of the interview.
-        experience_level (str): The experience level of the job.
-        file (UploadFile): The PDF file of the resume.
+    The endpoint expects a form with the following fields:
+    - job_role: The role the user is applying for.
+    - industry: The industry of the job.
+    - company: The company of the job.
+    - description: The description of the job.
+    - interview_type: The type of interview the user is applying for.
+    - experience_level: The experience level of the user.
+    - file: The resume file in PDF format.
 
-    Returns:
-        dict: A JSON response with the URL of the uploaded resume.
+    The endpoint first checks if the file is in PDF format. If not, it raises an HTTPException.
 
-    Raises:
-        HTTPException: If there is an error with the file, or if there is a server error.
+    It then saves the job details to the database and extracts text from the PDF using OCR.
+    The extracted text is then further processed to extract relevant resume information such as
+    skills, work experience, projects, and education using the Cohere model.
+
+    Finally, the endpoint uploads the PDF file to the Supabase bucket and returns the public URL of the uploaded file.
     """
     if file.content_type != "application/pdf":
         logger.error("Only PDF files are allowed for the resume.")
@@ -174,6 +178,9 @@ async def submit_application(
     folder_path = f"resumes/users/{user_id}/"
 
     try:
+
+        file_content = await file.read()
+        logger.info("File content read successfully")
         job = JobDetails(
             user_id=user_id,
             role=job_role,
@@ -192,10 +199,11 @@ async def submit_application(
         except Exception as e:
             logger.error(f"Error saving job details to database: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
+        
+        task = process_file.delay(file_content, user_id)
+        print(f"Task ID: {task.id}")
 
         # upload file to supabase bucket
-        file_content = await file.read()
-        logger.info("File content read successfully")
 
         response = supabase.storage.from_("resumes").upload(
             f"{folder_path}{file_name}", file_content
@@ -269,7 +277,7 @@ async def file_parsing(
             )
         llm = await llm_config()
         output_parser = JsonOutputParser()
-        resume_prompt = await resume_parsing_tempelate()
+        resume_prompt = await resume_parsing_template()
         try:
             chain1 = resume_prompt | llm | output_parser
             # run the chain

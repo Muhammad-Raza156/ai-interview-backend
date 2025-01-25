@@ -40,6 +40,24 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  worker:
+    build: .
+    container_name: celery_worker
+    command: ["celery", "-A", "app.core.celery.celery_app", "worker", "--loglevel=info"]
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+    env_file:
+    - .env
+    environment:
+      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_PORT=${REDIS_PORT}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    networks:
+      - app_network
+
   redis:
       image: redis:7-alpine
       restart: always
