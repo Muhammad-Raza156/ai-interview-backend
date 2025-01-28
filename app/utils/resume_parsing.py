@@ -4,6 +4,7 @@ from langchain_core.prompts import PromptTemplate
 from app.core.config import settings
 from langchain_cohere import ChatCohere
 from langchain_cohere import CohereEmbeddings
+from langchain_core.output_parsers import JsonOutputParser
 
 from gtts import gTTS
 import os
@@ -16,6 +17,8 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from typing import List
 from typing_extensions import Annotated, TypedDict
+
+from pydantic import Field, BaseModel, Json
 
 # Set Tesseract path
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
@@ -149,11 +152,6 @@ PROBLEM-SOLVING QUESTIONS:
 - Include both algorithmic and logical reasoning questions
 - Focus on problem-solving approach rather than just the solution
 - Cover edge cases and optimization
-
-CODING CHALLENGE QUESTIONS:
-- Must include clear input/output examples
-- Should test both implementation and optimization skills
-- Cover important concepts like error handling and edge cases
 
 For each section, generate 4 questions varying in difficulty.
 
@@ -347,6 +345,47 @@ def record_audio_with_stop():
 
     print("Recording stopped.")
     return recognized_text.strip()
+
+class SectionFeedback(BaseModel):
+    score: int = Field(description="The user's score out of 10 for this section.")
+    points_included: List[str] = Field(description="Points the user covered in their answers.")
+    missing_points: List[str] = Field(description="Points the user missed in their answers.")
+    suggestions: List[str] = Field(description="Suggestions to improve competency in this section.")
+
+class OverallResult(BaseModel):
+    technical_knowledge: SectionFeedback = Field(description="Feedback for the Technical Knowledge section.")
+    system_design: SectionFeedback = Field(description="Feedback for the System Design section.")
+    problem_solving: SectionFeedback = Field(description="Feedback for the Problem Solving section.")
+
+
+output_parser = JsonOutputParser(pydantic_object=OverallResult)
+
+async def result_tempelate():
+    result_template = """
+You are an AI interviewer analyzing the results of a user's interview. Below are the details:
+
+Sections: Technical Knowledge, System Design, Problem Solving
+Questions: {questions}
+Results: {results}
+
+Based on the above data, provide an overall result for the user. Include the following for each section:
+1. Score (out of 10).
+2. Feedback for each section, including:
+   - Points included in the user's answers.
+   - Missing points.
+   - Suggestions to improve competency and learning in the section.
+
+{format_instructions}
+"""
+
+    return PromptTemplate(
+        template=result_template,
+        input_variables=[
+            "questions",
+            "results",
+        ],
+        partial_variables={"format_instructions": output_parser.get_format_instructions()},
+    )
 
 embeddings = CohereEmbeddings(cohere_api_key=cohere_api_key, 
                              model="embed-multilingual-v3.0")

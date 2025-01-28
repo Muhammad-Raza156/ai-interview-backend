@@ -31,7 +31,9 @@ from app.utils.resume_parsing import (
     questions_tempelate,
     tts_speak,
     record_audio_with_stop,
-    evaluation_tempelate
+    evaluation_tempelate,
+    result_tempelate,
+    OverallResult
 )
 from app.models.db_models import JobDetails
 from app.models.db_models import ResumeKeySections
@@ -75,10 +77,14 @@ class QuestionDetail(BaseModel):
     expected_answer_points: List[str] = Field(..., description="Key points that should be covered in the answer")
 
 class SectionQuestions(BaseModel):
-    technical_knowledge: List[QuestionDetail] = Field(..., description="Questions about technical skills and knowledge")
-    system_design: List[QuestionDetail] = Field(..., description="System design and architecture questions")
-    problem_solving: List[QuestionDetail] = Field(..., description="Algorithmic and logical problem-solving questions")
-    coding_challenge: List[QuestionDetail] = Field(..., description="Programming implementation questions")
+    technical_knowledge: List[QuestionDetail] = Field(..., 
+                                                      description="Questions about technical skills and knowledge")
+    system_design: List[QuestionDetail] = Field(..., 
+                                                description="System design and architecture questions")
+    problem_solving: List[QuestionDetail] = Field(..., 
+                                                  description="Algorithmic and logical problem-solving questions")
+    coding_challenge: List[QuestionDetail] = Field(..., 
+                                                   description="Programming implementation questions")
 
 
 class Feedback(BaseModel):
@@ -122,8 +128,8 @@ class EvaluationResult(BaseModel):
 
 redis_client = aioredis.from_url(
     settings.REDIS_URL,
-    decode_responses=True,  # Enable automatic decoding of responses
-    db=0                    # Specify the database to use (default is 0)
+    decode_responses=True,
+    db=0
 )
 CACHE_EXPIRATION = 3600
 
@@ -609,7 +615,10 @@ async def conduct_interview(
                 db.add(answer)
                 await db.commit()
                 await db.refresh(question)
-                result.append(evaluation_result)
+                result.append({
+                    "section":section, 
+                    "result":evaluation_result
+                    })
 
         session.status = 'completed'
         await db.commit()
@@ -619,9 +628,59 @@ async def conduct_interview(
             "interview_questions": questions, 
             "evaluation_result": result
             }
+        result_cache_key = f"evaluation_result:{user_id}"
+        await redis_client.setex(
+            result_cache_key, 
+            CACHE_EXPIRATION, 
+            json.dumps(data)
+        )
         logger.info("data saved successfully to database")
         return success_response(data=data)
 
     except Exception as e:
         logger.error(f"Error generating questions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@file_router.get("/result")
+async def get_user_result(current_user: ViewUser = Depends(get_current_user)):
+    """
+    Retrieves the overall interview result for the current user.
+
+    This function fetches the cached interview evaluation result data for the current user
+    from the Redis cache. It then processes this data to compute the overall interview 
+    result using a language model and a result template.
+
+    Args:
+        current_user (ViewUser): The current authenticated user.
+
+    Returns:
+        dict: A dictionary containing the user ID and the overall interview result.
+
+    Raises:
+        HTTPException: If the user data is not found in the cache.
+    """
+
+    user_id = current_user.user_id
+    cache_key = f"evaluation_result:{user_id}"
+    user_data = await redis_client.get(cache_key)
+    
+    if not user_data:
+        raise HTTPException(status_code=404, detail="User data not found")
+    
+    # Deserialize the data from JSON
+    user_data = json.loads(user_data)
+
+    questions = user_data["interview_questions"]
+    results = user_data["evaluation_result"]
+
+    result_prompt = await result_tempelate()
+    result_llm = await llm_config(temperature=0.1)
+
+    result_parser = JsonOutputParser(pydantic_object=OverallResult)
+    chain3 = result_prompt | result_llm | result_parser
+    overall_result = await chain3.ainvoke({
+        "questions":questions, 
+         "results":results
+    })
+    return {"user_id": user_id, "overall_result": overall_result}
