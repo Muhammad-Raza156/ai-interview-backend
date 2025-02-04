@@ -1,8 +1,8 @@
 from celery import Celery
 from app.core.config import settings
 
-#redis_url = f"redis://:{settings.REDIS_PASSWORD}@{settings.REDIS_HOST}:{settings.REDIS_PORT}/0"
-redis_url = settings.REDIS_URL
+redis_url = f"redis://:{settings.REDIS_PASSWORD}@localhost:{settings.REDIS_PORT}/0"
+#redis_url = settings.REDIS_URL
 
 
 celery_app = Celery(

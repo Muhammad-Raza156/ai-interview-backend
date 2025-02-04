@@ -120,17 +120,17 @@ class EvaluationResult(BaseModel):
     )
 
 
-# redis_client = aioredis.Redis(
-#     host=settings.REDIS_HOST, 
-#     port=settings.REDIS_PORT, 
-#     password=settings.REDIS_PASSWORD, db=0, 
-#     decode_responses=True)
+redis_client = aioredis.Redis(
+    host="localhost", 
+    port=settings.REDIS_PORT, 
+    password=settings.REDIS_PASSWORD, db=0, 
+    decode_responses=True)
 
-redis_client = aioredis.from_url(
-    settings.REDIS_URL,
-    decode_responses=True,
-    db=0
-)
+# redis_client = aioredis.from_url(
+#     settings.REDIS_URL,
+#     decode_responses=True,
+#     db=0
+# )
 CACHE_EXPIRATION = 3600
 
 file_router = APIRouter()
@@ -428,8 +428,8 @@ async def generate_questions(
 
     This function generates a set of interview questions based on the user's job details,
     resume data, and existing key sections. It utilizes a language model to generate
-    questions tailored to the job role and description, and caches the generated questions
-    for the current user.
+    questions tailored to the job role and description, and the generated questions
+    for the current user saved to redis cache for later use.
 
     Args:
         current_user (ViewUser): The current authenticated user.
@@ -524,7 +524,7 @@ async def conduct_interview(
     """
     Conducts an interview session for the current user based on pre-generated questions.
 
-    This endpoint initiates an interview session using cached interview questions for the
+    This endpoint initiates an interview session using  interview questions stored in redis cache for the
     authenticated user. It evaluates the user's answers against model answers to compute 
     scores and feedback. The session details, including questions, answers, scores, and 
     feedback, are stored in the database.

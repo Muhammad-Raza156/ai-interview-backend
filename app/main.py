@@ -14,6 +14,7 @@ from app.api.v1.endpoints.authentication import auth_router
 from app.api.v1.endpoints.resume_parsing import file_router as resume_router
 from app.api.v1.endpoints.text_similarity import similarity_router
 from app.api.v1.endpoints.user_management import user_router
+from app.api.v1.endpoints.health import router as health_router
 
 
 from app.db.session import engine
@@ -124,6 +125,7 @@ async def shutdown():
 
 
 # Include the example router
+app.include_router(health_router, prefix=f"/api/v{api_version}")
 app.include_router(auth_router, prefix=f"/api/v{api_version}", tags=["Authentication"])
 app.include_router(user_router, prefix=f"/api/v{api_version}", tags=["User Management"])
 app.include_router(
@@ -136,9 +138,7 @@ app.include_router(
 
 # Root endpoint
 @app.get("/")
-async def root(request: Request):
-    logging.debug(f"Request from {request.client.host}")
-
-
 async def root():
     return {"message": "Welcome to the AI Recruitment Tool API"}
+# async def root(request: Request):
+#     logging.debug(f"Request from {request.client.host}")
