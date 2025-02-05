@@ -120,17 +120,17 @@ class EvaluationResult(BaseModel):
     )
 
 
-redis_client = aioredis.Redis(
-    host="localhost", 
-    port=settings.REDIS_PORT, 
-    password=settings.REDIS_PASSWORD, db=0, 
-    decode_responses=True)
+# redis_client = aioredis.Redis(
+#     host="localhost", 
+#     port=settings.REDIS_PORT, 
+#     password=settings.REDIS_PASSWORD, db=0, 
+#     decode_responses=True)
 
-# redis_client = aioredis.from_url(
-#     settings.REDIS_URL,
-#     decode_responses=True,
-#     db=0
-# )
+redis_client = aioredis.from_url(
+    settings.REDIS_URL,
+    decode_responses=True,
+    db=0
+)
 CACHE_EXPIRATION = 3600
 
 file_router = APIRouter()
