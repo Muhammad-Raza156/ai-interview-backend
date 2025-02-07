@@ -42,6 +42,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 from redis import asyncio as aioredis
+import platform
 
 
 class KeySectionInfo(BaseModel):
@@ -119,18 +120,18 @@ class EvaluationResult(BaseModel):
         description="Structured feedback containing positive/negative points and suggestions"
     )
 
-
-# redis_client = aioredis.Redis(
-#     host="localhost", 
-#     port=settings.REDIS_PORT, 
-#     password=settings.REDIS_PASSWORD, db=0, 
-#     decode_responses=True)
-
-redis_client = aioredis.from_url(
-    settings.REDIS_URL,
-    decode_responses=True,
-    db=0
-)
+if platform.system() == "Windows":
+    redis_client = aioredis.Redis(
+        host="localhost", 
+        port=settings.REDIS_PORT, 
+        password=settings.REDIS_PASSWORD, db=0, 
+        decode_responses=True)
+else:
+    redis_client = aioredis.from_url(
+        settings.REDIS_URL,
+        decode_responses=True,
+        db=0
+    )
 CACHE_EXPIRATION = 3600
 
 file_router = APIRouter()
@@ -448,7 +449,7 @@ async def generate_questions(
 
     job_query = select(JobDetails).where(JobDetails.user_id == current_user.user_id)
     job_result = await db.execute(job_query)
-    job_details = job_result.scalar_one_or_none()
+    job_details = job_result.first()
 
     if not job_details:
         logger.error("Job details not found or not associated with current user")

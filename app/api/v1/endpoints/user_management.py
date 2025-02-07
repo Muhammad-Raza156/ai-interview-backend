@@ -133,12 +133,14 @@ async def update_user_email(
         )
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
+        logger.info("User with email accessed successfully")
         if user is None:
             raise HTTPException(
                 status_code=404, detail="User with this email not found"
             )
         user.email = new_email
         await db.commit()
+        logger.info("email updated successfully")
         return {"message": "User email updated successfully"}
     except Exception as e:
         await db.rollback()

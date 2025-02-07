@@ -17,11 +17,11 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from typing import List
 from typing_extensions import Annotated, TypedDict
+import platform
 
 from pydantic import Field, BaseModel, Json
 
-# Set Tesseract path
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+
 cohere_api_key = settings.COHERE_API_KEY
 
 class ResumeResponse(TypedDict):
@@ -48,10 +48,15 @@ async def process_pdf(pdf_content):
     text from these images. Requires the pdf2image and pytesseract
     libraries, as well as a local installation of Tesseract OCR.
     """
-    #local_poppler_path = r"C:\Program Files\poppler-24.08.0\Library\bin"
-    dokcer_poppler_path = "/usr/bin/"
+    if platform.system() == "Windows":
+        poppler_path=r"C:\Program Files\poppler-24.08.0\Library\bin"
+    else:
+        # Set Tesseract path
+        pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
+        poppler_path = "/usr/bin/"
+        
     pdf_images = convert_from_bytes(
-        pdf_content, dpi=300, poppler_path=dokcer_poppler_path
+        pdf_content, dpi=300, poppler_path=poppler_path
     )
 
     text = ""
@@ -267,7 +272,7 @@ def tts_speak(text: str, lang: str = "en"):
 
     Args:
         text (str): The text to convert to speech.
-        lang (str): The language of the text (default is English).
+        lang (str): The language of the text (default language is English).
     """
     try:
       # Generate speech from text

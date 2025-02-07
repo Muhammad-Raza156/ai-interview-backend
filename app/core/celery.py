@@ -1,8 +1,11 @@
 from celery import Celery
 from app.core.config import settings
+import platform
 
-#redis_url = f"redis://:{settings.REDIS_PASSWORD}@localhost:{settings.REDIS_PORT}/0"
-redis_url = settings.REDIS_URL
+if platform.system() == "Windows":
+    redis_url = f"redis://:{settings.REDIS_PASSWORD}@localhost:{settings.REDIS_PORT}/0"
+else:
+    redis_url = settings.REDIS_URL
 
 
 celery_app = Celery(
