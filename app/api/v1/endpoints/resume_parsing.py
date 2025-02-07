@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi import UploadFile, File, Form
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import desc, select
 from supabase import create_client, Client
 from langchain_core.output_parsers import JsonOutputParser
 import logging
@@ -447,7 +447,8 @@ async def generate_questions(
     logger.info("Generating interview questions...")
     user_id = current_user.user_id
 
-    job_query = select(JobDetails).where(JobDetails.user_id == current_user.user_id)
+    job_query = select(JobDetails).where(JobDetails.user_id == current_user.user_id).order_by(
+        desc(JobDetails.created_at))
     job_result = await db.execute(job_query)
     job_details = job_result.first()
 
