@@ -1,20 +1,16 @@
+from fastapi import FastAPI
+from fastapi_pagination import add_pagination
 import logging
-
 from fastapi.middleware.cors import CORSMiddleware
-
 from dotenv import load_dotenv
 
 load_dotenv()
-
-from fastapi import FastAPI, Request
-from fastapi import FastAPI
-from fastapi_pagination import add_pagination
-import os
 from app.api.v1.endpoints.authentication import auth_router
-from app.api.v1.endpoints.resume_parsing import file_router as resume_router
+from app.api.v1.endpoints.resume_parsing import application_router
 from app.api.v1.endpoints.text_similarity import similarity_router
 from app.api.v1.endpoints.user_management import user_router
-from app.api.v1.endpoints.health import router as health_router
+from app.api.v1.endpoints.health import health_router
+from app.api.v1.endpoints.interview import interview_router
 
 
 from app.db.session import engine
@@ -84,7 +80,6 @@ api_version = settings.API_VERSION
 
 
 # Database setup: Create tables
-# Database setup: Create tabless
 @app.on_event("startup")
 async def create_tables():
     """
@@ -129,10 +124,13 @@ app.include_router(health_router, prefix=f"/api/v{api_version}")
 app.include_router(auth_router, prefix=f"/api/v{api_version}", tags=["Authentication"])
 app.include_router(user_router, prefix=f"/api/v{api_version}", tags=["User Management"])
 app.include_router(
-    resume_router, prefix=f"/api/v{api_version}", tags=["Interview"]
+    application_router, prefix=f"/api/v{api_version}", tags=["Application"]
 )
 app.include_router(
     similarity_router, prefix=f"/api/v{api_version}", tags=["Text Similarity"]
+)
+app.include_router(
+    interview_router, prefix=f"/api/v{api_version}", tags=["Interview"]
 )
 
 
@@ -140,5 +138,3 @@ app.include_router(
 @app.get("/")
 async def root():
     return {"message": "Welcome to the AI Recruitment Tool API"}
-# async def root(request: Request):
-#     logging.debug(f"Request from {request.client.host}")

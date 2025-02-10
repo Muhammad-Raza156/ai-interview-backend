@@ -11,7 +11,6 @@ class Settings(BaseSettings):
     ALGORITHM: str
     COHERE_API_KEY: str = ""
     API_VERSION: str
-    #database_url: str
     DATABASE_URL: str
     DB_URL: str
     SUPABASE_URL: str
