@@ -60,7 +60,6 @@ else:
         decode_responses=True,
         db=0
     )
-CACHE_EXPIRATION = 3600
 
 interview_router = APIRouter()
 
@@ -144,7 +143,7 @@ async def generate_questions(
         cache_key = f"interview_questions:{user_id}"
         await redis_client.setex(
             cache_key,
-            CACHE_EXPIRATION,
+            settings.CACHE_EXPIRATION,
             json.dumps({
                 "questions": questions,
                 "job_role": job_details.role
@@ -290,7 +289,7 @@ async def conduct_interview(
         result_cache_key = f"evaluation_result:{user_id}"
         await redis_client.setex(
             result_cache_key, 
-            CACHE_EXPIRATION, 
+            settings.CACHE_EXPIRATION, 
             json.dumps(data)
         )
         logger.info("data saved successfully to database")

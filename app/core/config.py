@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     REDIS_PORT: int
     REDIS_PASSWORD: str
     REDIS_URL: str
+    CACHE_EXPIRATION: int
     
 
     class Config:

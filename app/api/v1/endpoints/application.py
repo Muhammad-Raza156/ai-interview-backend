@@ -122,7 +122,6 @@ else:
         decode_responses=True,
         db=0
     )
-CACHE_EXPIRATION = 3600
 
 application_router = APIRouter()
 
@@ -210,7 +209,7 @@ async def submit_application(
                         "role": job_role,
                         "description": description
                     }),
-                    ex=CACHE_EXPIRATION
+                    ex=settings.CACHE_EXPIRATION
                 )
                 logger.info("Job details saved to Redis cache")
                 db.add(job)
@@ -325,7 +324,7 @@ async def file_parsing(
         await redis_client.set(
                     f"user_{user_id}_resume",
                     processed_resume_json,
-                    ex=CACHE_EXPIRATION
+                    ex=settings.CACHE_EXPIRATION
                 )
 
         # Save the processed resume to the database

@@ -89,7 +89,7 @@ def process_file(file_content: bytes, user_id: UUID):
                 cache_key = f"user_{user_id}_resume"
                 celery_app.backend.set(cache_key, 
                                        parsed_resume_json, 
-                                       expires=3600)
+                                       expires=settings.CACHE_EXPIRATION)
                 return {"data": new_resume.parsed_sections, "status": "success"}
             except Exception as e:
                 db.rollback()
