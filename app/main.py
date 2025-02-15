@@ -1,3 +1,4 @@
+import uvicorn
 from fastapi import FastAPI
 from fastapi_pagination import add_pagination
 import logging
@@ -6,7 +7,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 from app.api.v1.endpoints.authentication import auth_router
-from app.api.v1.endpoints.resume_parsing import application_router
+from app.api.v1.endpoints.application import application_router
+from app.api.v1.endpoints.profiling import profiling_route
 from app.api.v1.endpoints.text_similarity import similarity_router
 from app.api.v1.endpoints.user_management import user_router
 from app.api.v1.endpoints.health import health_router
@@ -34,16 +36,23 @@ sensitive_keys = [
     "password",
     "access_token",
     "secret_key",
-    "SECRET_KEY"
+    "SECRET_KEY",
     "cohere_api_key",
     "database_url",
     "DB_PASSWORD",
+    "DATABASE_URL",
     "DB_USER",
     "DB_URL",
     "SUPABASE_KEY",
     "SUPABASE_URL",
+    "REDIS_PASSWORD",
+    "REDIS_URL",
+    "SECRET_KEY",
+    "email",
+    "SUPABASE_KEY",
+    "SUPABASE_URL"
 ]
-filter = SensitiveInfoFilter(sensitive_keys)
+sensitive_data = SensitiveInfoFilter(sensitive_keys)
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +63,7 @@ logging.basicConfig(
     handlers=[logging.FileHandler("app.log"), logging.StreamHandler()],
 )
 
-logging.getLogger().addFilter(filter)
+logging.getLogger().addFilter(sensitive_data)
 
 # Create the FastAPI app instance
 app = FastAPI()
@@ -62,10 +71,11 @@ app = FastAPI()
 add_pagination(app)
 
 origins = [
+    "http://localhost:3001",
     "http://localhost:3000",
-    "http://0.0.0.0:3000",
     "http://localhost:8000",
-    "http://0.0.0.0:8000",
+    "http://localhost:8001",
+    "http://localhost"
 ]
 
 app.add_middleware(
@@ -115,8 +125,7 @@ async def shutdown():
     """
     await engine.dispose()
     logging.info("Database connection closed!")
-
-    print("Database connection closed!")
+    logging.info("Application shutdown completed!")
 
 
 # Include the example router
@@ -125,6 +134,9 @@ app.include_router(auth_router, prefix=f"/api/v{api_version}", tags=["Authentica
 app.include_router(user_router, prefix=f"/api/v{api_version}", tags=["User Management"])
 app.include_router(
     application_router, prefix=f"/api/v{api_version}", tags=["Application"]
+)
+app.include_router(
+    profiling_route, prefix=f"/api/v{api_version}", tags=["Profiling"]
 )
 app.include_router(
     similarity_router, prefix=f"/api/v{api_version}", tags=["Text Similarity"]
@@ -138,3 +150,7 @@ app.include_router(
 @app.get("/")
 async def root():
     return {"message": "Welcome to the AI Recruitment Tool API"}
+
+
+# if __name__ == "__main__":
+#     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

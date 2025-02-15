@@ -14,8 +14,7 @@ import queue
 
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
-from pydantic import Field, BaseModel
-from typing import List
+from app.schemas.interview import OverallResult
 
 logger = logging.getLogger(__name__)
 
@@ -261,17 +260,6 @@ Return the response as a JSON object matching this exact structure with indentat
             "key_sections",
         ],
     )
-
-class SectionFeedback(BaseModel):
-    score: int = Field(description="The user's score out of 10 for this section.")
-    points_included: List[str] = Field(description="Points the user covered in their answers.")
-    missing_points: List[str] = Field(description="Points the user missed in their answers.")
-    suggestions: List[str] = Field(description="Suggestions to improve competency in this section.")
-
-class OverallResult(BaseModel):
-    technical_knowledge: SectionFeedback = Field(description="Feedback for the Technical Knowledge section.")
-    system_design: SectionFeedback = Field(description="Feedback for the System Design section.")
-    problem_solving: SectionFeedback = Field(description="Feedback for the Problem Solving section.")
 
 async def evaluation_tempelate():
     evaluation_template = """

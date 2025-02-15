@@ -17,7 +17,7 @@ from app.models.db_models import (
     Resume
 ) 
 from app.utils.user_management import get_current_user
-from app.schemas.resume_parsing import ParsedResume
+from app.schemas.application import ParsedResume, JobInterviewForm
 from app.api.api_resonse import success_response
 from app.utils.resume_parsing import (
     process_pdf,
@@ -33,7 +33,6 @@ from pydantic import BaseModel, Field
 
 from redis import asyncio as aioredis
 import platform
-
 
 class KeySectionInfo(BaseModel):
     relevance_score: int = Field(
@@ -110,6 +109,7 @@ class EvaluationResult(BaseModel):
         description="Structured feedback containing positive/negative points and suggestions"
     )
 
+
 if platform.system() == "Windows":
     redis_client = aioredis.Redis(
         host="localhost", 
@@ -179,31 +179,57 @@ async def submit_application(
 
         file_content = await file.read()
         logger.info("File content read successfully")
-        job = JobDetails(
-            user_id=user_id,
-            role=job_role,
-            industry=industry,
-            company=company,
-            experience_level=experience_level,
-            description=description,
-            interview_type=interview_type,
+        existing_job = await db.execute(
+        select(JobDetails).where(
+            JobDetails.user_id == user_id,
+            JobDetails.role == job_role,
+            JobDetails.company == company,
+            JobDetails.experience_level == experience_level,
+            JobDetails.description == description
+            )
         )
-        try:
+        existing_job = existing_job.scalar_one_or_none()
 
-            db.add(job)
-            await db.commit()
-            await db.refresh(job)
-            logger.info("Job details saved successfully to database")
-        except Exception as e:
-            logger.error(f"Error saving job details to database: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
+        if not existing_job:
+            job = JobDetails(
+                user_id=user_id,
+                role=job_role,
+                industry=industry,
+                company=company,
+                experience_level=experience_level,
+                description=description,
+                interview_type=interview_type,
+            )
+            try:
+                
+
+                # save job details to redis cache
+                await redis_client.set(
+                    f"user_{user_id}_job",
+                    json.dumps({
+                        "role": job_role,
+                        "description": description
+                    }),
+                    ex=CACHE_EXPIRATION
+                )
+                logger.info("Job details saved to Redis cache")
+                db.add(job)
+                await db.commit()
+                await db.refresh(job)
+                logger.info("Job details saved successfully to database")
+            except Exception as e:
+                logger.error(f"Error saving job details to database: {str(e)}")
+                raise HTTPException(status_code=500, detail=str(e))
+        else:
+            logger.info("Job with the same details already exists. Skipping insertion.")
         
         task = process_file.delay(file_content, user_id)
         print(f"Task ID: {task.id}")
 
         # Check if the file already exists
         existing_files = supabase.storage.from_("resumes").list(folder_path)
-        if file_name in existing_files:
+        existing_filenames = [file_info["name"] for file_info in existing_files]
+        if file_name in existing_filenames:
             # Delete the existing file
             delete_response = supabase.storage.from_("resumes").remove([file_path])
             if not delete_response:
@@ -296,6 +322,11 @@ async def file_parsing(
             raise HTTPException(status_code=500, detail=str(e))
         # processed resume to json
         processed_resume_json = json.dumps(processed_resume)
+        await redis_client.set(
+                    f"user_{user_id}_resume",
+                    processed_resume_json,
+                    ex=CACHE_EXPIRATION
+                )
 
         # Save the processed resume to the database
         parsed_resume = ParsedResume(

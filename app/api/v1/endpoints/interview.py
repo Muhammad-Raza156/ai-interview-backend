@@ -1,9 +1,17 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import (APIRouter, 
+                     HTTPException, 
+                     Depends,
+                     WebSocket, 
+                     WebSocketDisconnect,
+                     WebSocketException)
+import asyncio
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import desc, select
 from langchain_core.output_parsers import JsonOutputParser
+import jwt
 import logging
+from app.schemas.autentication import TokenData
 
 logger = logging.getLogger(__name__)
 
@@ -26,97 +34,19 @@ from app.utils.interview import (
     tts_speak,
     record_audio,
     audio_to_text_silero,
-    record_audio_with_stop,
     evaluation_tempelate,
-    result_tempelate,
-    OverallResult
+    result_tempelate
 )
+from app.schemas.interview import *
 from app.models.db_models import JobDetails
+from app.models.db_models import User as UserModel
 from app.models.db_models import ResumeKeySections
-
-from typing import List, Optional
-from pydantic import BaseModel, Field
 
 from redis import asyncio as aioredis
 import platform
 import tempfile
 import os
 
-
-class KeySectionInfo(BaseModel):
-    relevance_score: int = Field(
-        ..., ge=1, le=10, description="Score from 1-10 indicating relevance to job"
-    )
-    key_points: List[str] = Field(..., description="List of important points to cover")
-    required_knowledge: List[str] = Field(
-        ..., description="Specific knowledge areas to assess"
-    )
-    candidate_experience: str = Field(
-        ..., description="Relevant experience from candidate's resume"
-    )
-    suggested_focus: str = Field(
-        ..., description="Recommended focus areas for interview"
-    )
-
-
-class InterviewSections(BaseModel):
-    technical_skills: KeySectionInfo
-    system_design: KeySectionInfo
-    problem_solving: KeySectionInfo
-    domain_knowledge: KeySectionInfo
-    project_experience: KeySectionInfo
-
-class QuestionDetail(BaseModel):
-    question: str = Field(..., description="The interview question")
-    model_answer: str = Field(
-        ...,
-        description="Complete model answer that demonstrates ideal response",
-        min_length=50
-    )
-    expected_answer_points: List[str] = Field(..., description="Key points that should be covered in the answer")
-
-class SectionQuestions(BaseModel):
-    technical_knowledge: List[QuestionDetail] = Field(..., 
-                                                      description="Questions about technical skills and knowledge")
-    system_design: List[QuestionDetail] = Field(..., 
-                                                description="System design and architecture questions")
-    problem_solving: List[QuestionDetail] = Field(..., 
-                                                  description="Algorithmic and logical problem-solving questions")
-    coding_challenge: List[QuestionDetail] = Field(..., 
-                                                   description="Programming implementation questions")
-
-
-class Feedback(BaseModel):
-    type: str = Field(
-        ..., 
-        description="Type of feedback: 'positive' or 'negative'",
-        pattern='^(positive|negative)$'
-    )
-    points: List[str] = Field(
-        ...,
-        description="List of feedback points",
-        min_items=1
-    )
-    suggestions: Optional[List[str]] = Field(
-        default=None,
-        description="Improvement suggestions when feedback is negative"
-    )
-    missing_points: Optional[List[str]] = Field(
-        default=None,
-        description="Points that were missing from the answer"
-    )
-
-class EvaluationResult(BaseModel):
-    score: float = Field(
-        ...,
-        description="Score out of 10",
-        ge=0,
-        le=10
-    )
-    feedback: Feedback = Field(
-        ...,
-        description="Structured feedback containing positive/negative points and suggestions"
-    )
 
 if platform.system() == "Windows":
     redis_client = aioredis.Redis(
@@ -309,7 +239,6 @@ async def conduct_interview(
 
                 print(text)
                 tts_speak(text)
-                #print("Starting audio recording session...")
                 logger.info("Starting audio recording session...")
                 #candidate_answer=record_audio_with_stop()
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio_file:
@@ -370,6 +299,166 @@ async def conduct_interview(
     except Exception as e:
         logger.error(f"Error in interview process: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# async def get_token_from_websocket(websocket: WebSocket):
+#     """Extracts token from the WebSocket headers."""
+#     token = websocket.headers.get("Authorization")
+#     if not token:
+#         await websocket.close(code=1008)  # Close with policy violation code
+#         return None
+#     return token.replace("Bearer ", "")
+
+# def decode_jwt(token: str):
+#     """Decodes the JWT token and returns the user data."""
+#     try:
+#         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+#         user_email: str = payload.get("sub")
+#         return user_email
+#     except jwt.ExpiredSignatureError:
+#         raise WebSocketException(status_code=401, detail="Token has expired")
+#     except jwt.InvalidTokenError:
+#         raise WebSocketException(status_code=401, detail="Invalid token")
+
+# @interview_router.websocket("/interview")
+# async def websocket_interview(
+#     websocket: WebSocket, 
+#     db: AsyncSession = Depends(get_db_session)
+# ):
+#     """
+#     WebSocket-based real-time interview session.
+    
+#     - Sends questions to the user one at a time.
+#     - Receives audio responses, converts them to text, and evaluates them.
+#     - Sends back evaluation scores and feedback in real-time.
+
+#     Args:
+#         websocket (WebSocket): WebSocket connection.
+#         db (AsyncSession): The database session.
+#         current_user (ViewUser): The authenticated user.
+
+#     """
+    
+#     await websocket.accept()
+#     token = await get_token_from_websocket(websocket)
+#     if not token:
+#         return
+#     user_email = decode_jwt(token)
+#     token_data = TokenData(user_email=user_email)
+#     stmt = select(UserModel).where(UserModel.email == token_data.user_email)
+#     result = await db.execute(stmt)
+#     if result is None:
+#         raise HTTPException(status_code=404, detail="User not found")
+#     db_user = result.scalar_one_or_none()
+
+#     user_id = db_user.user_id
+#     cache_key = f"interview_questions:{user_id}"
+#     cached_data = await redis_client.get(cache_key)
+
+#     if not cached_data:
+#         await websocket.send_json({"error": "Interview questions not found. Please generate questions first."})
+#         await websocket.close()
+#         return
+
+#     cached_data = json.loads(cached_data)
+#     questions = cached_data["questions"]
+
+#     # Create a new interview session in the database
+#     session = InterviewSession(
+#         user_id=user_id,
+#         job_role=cached_data["job_role"],
+#         status='active'
+#     )
+#     db.add(session)
+#     await db.commit()
+#     await db.refresh(session)
+
+#     try:
+#         for section, question_list in questions.items():
+#             await websocket.send_json({"section": section})
+            
+#             for question_data in question_list:
+#                 text = question_data["question"]
+#                 model_answer = question_data["answer"]
+
+#                 if isinstance(model_answer, list):
+#                     model_answer = "\n".join(model_answer)
+
+#                 question = Question(
+#                     session_id=session.id,
+#                     question_text=text,
+#                     model_answer=model_answer
+#                 )
+#                 db.add(question)
+#                 await db.commit()
+#                 await db.refresh(question)
+
+#                 # Send question to frontend
+#                 await websocket.send_json({"question": text})
+
+#                 # Wait for the candidate's response (audio file path or text)
+#                 response_data = await websocket.receive_json()
+                
+#                 if "audio" in response_data:
+#                     audio_file = response_data["audio"]
+#                     candidate_answer = await audio_to_text_silero(audio_file)
+                    
+#                     # Remove temporary audio file
+#                     try:
+#                         os.remove(audio_file)
+#                     except Exception as e:
+#                         logger.error(f"Error removing temporary audio file: {e}")
+#                 else:
+#                     candidate_answer = response_data.get("text", "")
+
+#                 # Evaluate response using LLM
+#                 evaluation_prompt = await evaluation_tempelate()
+#                 evaluation_llm = await llm_config(temperature=0.3)
+#                 evaluation_parser = JsonOutputParser(pydantic_object=EvaluationResult)
+
+#                 evaluation_chain = evaluation_prompt | evaluation_llm | evaluation_parser
+#                 evaluation_result = await evaluation_chain.ainvoke({
+#                     "question": text,
+#                     "candidate_answer": candidate_answer,
+#                     "model_answer": model_answer,
+#                 })
+
+#                 score = evaluation_result["score"]
+#                 feedback = evaluation_result["feedback"]
+
+#                 # Save response in the database
+#                 answer = Answer(
+#                     session_id=session.id,
+#                     question_id=question.id,
+#                     user_answer=candidate_answer,
+#                     score=int(score),
+#                     feedback=json.dumps(feedback)
+#                 )
+#                 db.add(answer)
+#                 await db.commit()
+#                 await db.refresh(question)
+
+#                 # Send evaluation result back to the client
+#                 await websocket.send_json({
+#                     "section": section,
+#                     "question": text,
+#                     "score": score,
+#                     "feedback": feedback
+#                 })
+
+#         session.status = 'completed'
+#         await db.commit()
+#         await websocket.send_json({"status": "Interview completed"})
+#         await websocket.close()
+
+#     except WebSocketDisconnect:
+#         session.status = 'disconnected'
+#         await db.commit()
+#         logger.info(f"User {user_id} disconnected from the interview session.")
+
+#     except Exception as e:
+#         logger.error(f"Error in interview process: {str(e)}")
+#         await websocket.send_json({"error": str(e)})
+#         await websocket.close()
 
 
 @interview_router.get("/result")

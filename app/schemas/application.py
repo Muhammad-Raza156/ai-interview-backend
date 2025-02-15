@@ -2,6 +2,15 @@ from pydantic import BaseModel, Json
 from uuid import UUID 
 
 
+class JobInterviewForm(BaseModel):
+    job_role: str
+    industry: str
+    company: str
+    description: str
+    interview_type: str
+    experience_level: str
+
+
 class ParsedResume(BaseModel):
     user_id: UUID
     parsed_sections: Json
