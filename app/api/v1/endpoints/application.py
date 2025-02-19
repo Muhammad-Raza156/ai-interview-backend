@@ -222,8 +222,6 @@ async def submit_application(
         else:
             logger.info("Job with the same details already exists. Skipping insertion.")
         
-        task = process_file.delay(file_content, user_id)
-        print(f"Task ID: {task.id}")
 
         # Check if the file already exists
         existing_files = supabase.storage.from_("resumes").list(folder_path)
@@ -253,8 +251,11 @@ async def submit_application(
         )
 
         logger.info(f"File uploaded to Supabase successfully at {file_url}")
+        task = process_file.delay(file_content, user_id)
+        print(f"Task ID: {task.id}")
 
-        return {"file": file_url}
+        return {"file": file_url,
+                "task_id": task.id}
     except Exception as e:
         logger.error(f"Error uploading file to Supabase: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -328,16 +329,29 @@ async def file_parsing(
                 )
 
         # Save the processed resume to the database
-        parsed_resume = ParsedResume(
-            user_id=user_id, parsed_sections=processed_resume_json
-        )
-        new_resume = Resume(**parsed_resume.dict())
+        existing_resume = await db.execute(
+            select(Resume).where(Resume.user_id == user_id)
+            )
+        existing_resume = existing_resume.scalars().first()
 
-        db.add(new_resume)
+        if existing_resume:
+            existing_resume.parsed_sections = processed_resume_json
+            #await db.commit()
+            #await db.refresh(existing_resume)
+            logger.info("Existing resume record updated successfully.")
+        else:
+            parsed_resume = ParsedResume(
+                user_id=user_id, parsed_sections=processed_resume_json
+            )
+            existing_resume = Resume(**parsed_resume.dict())
+            db.add(existing_resume)
+            logger.info("Resume parsed and saved successfully to database")
+
         await db.commit()
-        await db.refresh(new_resume)
-        logger.info("Resume parsed and saved successfully to database")
-        return {"data": processed_resume}
+        await db.refresh(existing_resume)
+            
+
+        return {"data":existing_resume.parsed_sections}
 
     except Exception as e:
         logger.error(f"Error parsing resume: {str(e)}")

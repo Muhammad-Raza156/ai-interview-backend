@@ -63,10 +63,11 @@ async def resume_parsing_template():
     3. Work Experience
     4. Years of Experience
     5. Projects
+    6. Certifications
 
     Resume Text:
     {resume_text}
-    Output the result as a JSON object with indentation of 4 spaces and keys: education, skills, experience, projects, and years.
+    Output the result as a JSON object with indentation of 4 spaces and keys: education, skills, experience, projects, years(experince in years), certifications (if any).
     """
     return PromptTemplate(template=resume_template, input_variables=["resume_text"])
 

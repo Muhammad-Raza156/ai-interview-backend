@@ -1,6 +1,7 @@
 from app.core.celery import celery_app
 from sqlalchemy.orm import Session
-from sqlalchemy import create_engine
+import celery
+from sqlalchemy import create_engine, select
 from app.utils.resume_parsing import ( 
     process_pdf, 
     resume_parsing_template, 
@@ -13,15 +14,24 @@ from uuid import UUID
 import logging
 import asyncio
 from app.core.config import settings
+from sqlalchemy.pool import QueuePool
+from app.schemas.application import ParsedResume
 
 
 logger = logging.getLogger(__name__)
 
 database_url = f"postgresql+psycopg2://postgres.reyyarznpztvshewnmji:{settings.DB_PASSWORD}@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
 
-engine = create_engine(database_url, echo=True)
+engine = create_engine(database_url,
+                       pool_size=10,
+                       max_overflow=10,
+                       pool_timeout=300,
+                       pool_pre_ping=True,
+                       pool_recycle=3600,
+                       poolclass=QueuePool,
+                       echo=True)
 
-@celery_app.task(name="process_file")
+@celery_app.task(name="process_file", max_retries=3)
 def process_file(file_content: bytes, user_id: UUID):
     """
     Processes a resume file by extracting text, parsing it, and saving the parsed data to the database.
@@ -70,29 +80,42 @@ def process_file(file_content: bytes, user_id: UUID):
 
             return processed_resume
         processed_resume = asyncio.run(async_task(file_content))
-        print("Resume parsing completed successfully")
+        processed_resume_json=json.dumps(processed_resume)
+        #print("Resume parsing completed successfully")
         logger.info("Resume parsing completed successfully")
 
         with Session(engine) as db:
             try:
                 # Example: Save data to the database
-                parsed_resume_json = json.dumps(processed_resume)
-                new_resume = Resume(
-                            user_id=user_id,
-                            parsed_sections=parsed_resume_json
-                            )
-                db.add(new_resume)
+
+                existing_resume = db.execute(
+                    select(Resume).where(Resume.user_id == user_id)
+                ).scalars().first()
+                if existing_resume:
+                    existing_resume.parsed_sections = processed_resume_json
+                    logger.info(f"Resume updated for user_id={user_id}")
+                else:
+                    parsed_resume = ParsedResume(
+                        user_id=user_id, parsed_sections=processed_resume_json
+                    )
+                    existing_resume = Resume(**parsed_resume.dict())
+                    db.add(existing_resume)
+                    logger.info(f"New resume inserted for user_id={user_id}")
                 db.commit()
-                db.refresh(new_resume)
-                logger.info("Data saved to the database successfully")
+                db.refresh(existing_resume)
+                
+
                 #save to redis cache
                 cache_key = f"user_{user_id}_resume"
                 celery_app.backend.set(cache_key, 
-                                       parsed_resume_json, 
+                                       processed_resume_json, 
                                        expires=settings.CACHE_EXPIRATION)
-                return {"data": new_resume.parsed_sections, "status": "success"}
+                return {"data": existing_resume.parsed_sections, 
+                        "status": "success"}
             except Exception as e:
                 db.rollback()
+                if "server closed the connection unexpectedly" in str(e):
+                    raise celery.Task.retry(exc=e, countdown=2 ** celery.Task.request.retries)
                 logger.error(f"Error saving data to the database: {str(e)}")
                 return {"error": str(e), "status": "failed"}
     except Exception as e:

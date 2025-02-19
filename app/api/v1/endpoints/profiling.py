@@ -36,10 +36,28 @@ CACHE_EXPIRATION = 3600
 profiling_route = APIRouter()
 
 
-@profiling_route.get("/profiling")
-async def get_profiling(user: ViewUser = Depends(get_current_user),
+@profiling_route.get("/resume_analysis")
+async def resume_analysis(user: ViewUser = Depends(get_current_user),
                         db: AsyncSession = Depends(get_db_session)):
     
+
+    """
+    Retrieves the user's profiling data like resume, job details from the redis cache
+    or if not found, from the database. The profiling data is then used to generate
+    a structured JSON response using the Cohere model.
+
+    Args:
+        user (ViewUser): The current user authenticated and retrieved from
+        the token.
+        db (AsyncSession): The database session dependency.
+
+    Returns:
+        dict: A dictionary containing the profiling result.
+
+    Raises:
+        HTTPException: If job details or resume are not found or associated with
+        the current user, or if there is an error during profiling.
+    """
     user_id = user.user_id
     # Get the user's profiling data like resume, job details from the redis cache
     job_key=f"user_{user_id}_job"
