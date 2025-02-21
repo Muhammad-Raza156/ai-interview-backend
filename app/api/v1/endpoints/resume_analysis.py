@@ -10,7 +10,7 @@ from app.db.session import get_db_session
 from app.utils.user_management import get_current_user
 from app.schemas.user_management import ViewUser
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.utils.profiling import prompt, OutputParser
+from app.utils.resume_analysis import prompt, OutputParser
 from app.utils.resume_parsing import llm_config
 from app.models.db_models import JobDetails, Resume
 from app.core.celery import celery_app

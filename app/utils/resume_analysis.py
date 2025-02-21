@@ -69,13 +69,18 @@ prompt = PromptTemplate(
     - Include an **experience level evaluation**:
       - `"qualify"` → If the candidate's experience is **greater than or equal** to the required experience.
       - `"not qualify"` → If the candidate's experience is **less than** the required experience.
+    - Additionally, extract **non-industrial experience separately**, including **research and teaching** experience.
     - Example output structure:
       ```json
       "work_experience": {{
           "improvements": "AI-generated text providing recommendations",
           "relevant_titles": ["Software Engineer", "AI Engineer"],
           "industry_experience": "5 years",
-          "experience_leve":"qualify"
+          "experience_level":"qualify",
+          "non_industrial_experience": {{
+              "Research": "2 years",
+              "Teaching": "1 year"
+          }}
       }}
       ```
 

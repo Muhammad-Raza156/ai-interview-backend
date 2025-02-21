@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from app.api.v1.endpoints.authentication import auth_router
 from app.api.v1.endpoints.application import application_router
-from app.api.v1.endpoints.profiling import profiling_route
+from app.api.v1.endpoints.resume_analysis import profiling_route
 from app.api.v1.endpoints.text_similarity import similarity_router
 from app.api.v1.endpoints.user_management import user_router
 from app.api.v1.endpoints.health import health_router
@@ -136,7 +136,7 @@ app.include_router(
     application_router, prefix=f"/api/v{api_version}", tags=["Application"]
 )
 app.include_router(
-    profiling_route, prefix=f"/api/v{api_version}", tags=["Profiling"]
+    profiling_route, prefix=f"/api/v{api_version}", tags=["Resume Analysis"]
 )
 app.include_router(
     similarity_router, prefix=f"/api/v{api_version}", tags=["Text Similarity"]

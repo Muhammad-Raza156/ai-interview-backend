@@ -2,7 +2,6 @@ from gtts import gTTS
 import os
 import playsound as ps
 
-import speech_recognition as sr
 import threading
 import sounddevice as sd
 import wave
@@ -11,6 +10,8 @@ import torchaudio
 import numpy as np
 import logging
 import queue
+import io
+from typing import Union, BinaryIO
 
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
@@ -87,23 +88,28 @@ def record_audio(filename, rate=16000, channels=1):
 
     logger.info(f"Recording saved as {filename}")
 
-async def audio_to_text_silero(file_path):
+async def audio_to_text_silero(audio_data: Union[bytes, BinaryIO]) -> str:
     """
-    Converts an audio file in WAV format to text using the Silero speech-to-text model.
-
+    Converts audio data directly to text using the Silero speech-to-text model.
+    
     Args:
-        file_path (str): The path to the input audio file in WAV format.
-
+        audio_data (Union[bytes, BinaryIO]): Raw audio data in WAV format received from WebSocket
+        
     Returns:
-        str: The transcribed text from the audio.
+        str: The transcribed text from the audio
     """
-    if not os.path.exists(file_path):
-        logger.error(f"Error: The file '{file_path}' does not exist.")
-        return ""
     try:
-        waveform, sample_rate = torchaudio.load(file_path)
+        # Create an in-memory buffer from the audio data
+        if isinstance(audio_data, bytes):
+            audio_buffer = io.BytesIO(audio_data)
+        else:
+            audio_buffer = audio_data
+
+        # Load audio from buffer instead of file
+        waveform, sample_rate = torchaudio.load(audio_buffer)
         logger.info(f"Waveform shape: {waveform.shape}, Sample rate: {sample_rate}")
 
+        # Resample if needed
         if sample_rate != 16000:
             resampler = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)
             waveform = resampler(waveform)
@@ -111,7 +117,6 @@ async def audio_to_text_silero(file_path):
         # Convert to mono if stereo
         if waveform.ndim > 1:
             waveform = waveform.mean(dim=0, keepdim=True)
-
 
         # Normalize the waveform
         mean = waveform.mean()
@@ -125,82 +130,27 @@ async def audio_to_text_silero(file_path):
 
         # Load the Silero model
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        model, decoder, utils = torch.hub.load(repo_or_dir='snakers4/silero-models',
-                                                    model='silero_stt',
-                                                    language='en',
-                                                    device=device)
+        model, decoder, utils = torch.hub.load(
+            repo_or_dir='snakers4/silero-models',
+            model='silero_stt',
+            language='en',
+            device=device
+        )
         logger.info("Silero STT model loaded")
+        
         prepare_model_input = utils[-1]
-        #(read_batch, split_into_batches, read_audio, prepare_model_input) = utils
         input_batch = prepare_model_input(waveform, device=device)
 
         # Transcribe the audio
         output = model(input_batch)
         transcription = decoder(output[0].cpu())
         logger.info(f"Transcription: {transcription}")
+        
         return transcription
+
     except Exception as e:
         logger.error(f"Transcription failed: {e}")
         return ""
- 
-
-def record_audio_with_stop():
-    """
-    Function to record audio until the 's' key is pressed.
-    Uses Google Speech-to-Text API to transcribe the audio.
-    """
-
-    r = sr.Recognizer()
-    global stop_recording
-    stop_recording = False
-    recognized_text = ""
-
-    def listen_for_stop():
-        """Background thread to listen for 's' key press to stop recording."""
-        global stop_recording
-        import keyboard  # Import here to avoid issues with threading
-        print("Press 's' to stop recording.")
-        while True:
-            if keyboard.is_pressed("s"):
-                stop_recording = True
-                break
-
-    # Start the background thread
-    stop_thread = threading.Thread(target=listen_for_stop, daemon=True)
-    stop_thread.start()
-
-    print("Listening...")
-
-    while not stop_recording:
-        try:
-            # Use the microphone as source for input
-            with sr.Microphone() as source2:
-                # Wait for a second to let the recognizer
-                # adjust the energy threshold based on
-                # the surrounding noise level
-                r.adjust_for_ambient_noise(source2, duration=0.2)
-                
-                # Listens for the user's input
-                audio2 = r.listen(source2, timeout=5, phrase_time_limit=10)
-                
-                # Using Google to recognize audio
-                MyText = r.recognize_google(audio2)
-                MyText = MyText.lower()
-
-                #print("Did you say:")
-                print(MyText)
-                recognized_text += MyText + " "
-
-        except sr.WaitTimeoutError:
-            print("Listening timeout - waiting for speech...")        
-        except sr.RequestError as e:
-            print(f"Could not request results: {e}")
-            
-        except sr.UnknownValueError:
-            print("Unknown error occurred")
-
-    print("Recording stopped.")
-    return recognized_text.strip()
 
 async def questions_tempelate():
     question_template =  """You are an expert technical interviewer for a {job_role} position. Generate a comprehensive set of interview questions based on the following information:

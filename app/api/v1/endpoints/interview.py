@@ -31,8 +31,6 @@ from app.utils.resume_parsing import (
 )
 from app.utils.interview import (
     questions_tempelate,
-    tts_speak,
-    record_audio,
     audio_to_text_silero,
     evaluation_tempelate,
     result_tempelate
@@ -44,8 +42,7 @@ from app.models.db_models import ResumeKeySections
 
 from redis import asyncio as aioredis
 import platform
-import tempfile
-import os
+from typing import Dict
 
 
 if platform.system() == "Windows":
@@ -158,56 +155,101 @@ async def generate_questions(
     except Exception as e:
         logger.error(f"Error generating questions: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+class InterviewWebSocketManager:
+    def __init__(self):
+        self.active_sessions: Dict[str, WebSocket] = {}
 
+    async def connect(self, websocket: WebSocket, user_id: str):
+        await websocket.accept()
+        self.active_sessions[user_id] = websocket
 
+    def disconnect(self, user_id: str):
+        if user_id in self.active_sessions:
+            del self.active_sessions[user_id]
 
-@interview_router.post("/interview-session")
-async def conduct_interview(
-    current_user: ViewUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_session),
+    async def send_message(self, user_id: str, message: dict):
+        if user_id in self.active_sessions:
+            await self.active_sessions[user_id].send_json(message)
+
+manager = InterviewWebSocketManager()
+
+def decode_jwt(token: str):
+    """Decodes the JWT token and returns the user data."""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        user_email: str = payload.get("sub")
+        return user_email
+    except jwt.ExpiredSignatureError:
+        raise WebSocketException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError:
+        raise WebSocketException(status_code=401, detail="Invalid token")
+
+async def websocket_auth(websocket: WebSocket):
+    """Extracts token from the WebSocket headers."""
+    token = websocket.headers.get("Authorization")
+    if not token:
+        await websocket.close(code=1008)  # Close with policy violation code
+        return None
+    return token.replace("Bearer ", "")
+
+@interview_router.websocket("/ws/interview")
+async def websocket_interview(
+    websocket: WebSocket, 
+    db: AsyncSession = Depends(get_db_session)
 ):
 
     """
-    Conducts an interview session for the current user based on pre-generated questions.
+    Handles the WebSocket connection for the interview process.
 
-    This endpoint initiates an interview session using  interview questions stored in redis cache for the
-    authenticated user. It evaluates the user's answers against model answers to compute 
-    scores and feedback. The session details, including questions, answers, scores, and 
-    feedback, are stored in the database.
+    This endpoint is used to communicate with the client during the interview process.
+    It receives messages from the client and sends messages to the client to update the
+    UI. The messages are processed in the order they are received and are used to update
+    the database with the user's answers.
 
     Args:
-        current_user (ViewUser): The current authenticated user.
+        websocket (WebSocket): The WebSocket object representing the connection to the client.
         db (AsyncSession): The database session dependency.
 
     Returns:
-        JSON: A success response containing the job role, interview questions, and evaluation results.
-
-    Raises:
-        HTTPException: If interview questions are not found in the cache, or if there is an error during processing.
+        None
     """
 
-    user_id = current_user.user_id
+    token = await websocket_auth(websocket)
+    if not token:
+        await websocket.close(code=4001, detail="Unauthorized")
+        return
+    user_email = decode_jwt(token)
+    token_data = TokenData(user_email=user_email)
+    stmt = select(UserModel).where(UserModel.email == token_data.user_email)
+    response = await db.execute(stmt)
+    if not response:
+        raise WebSocketException(status_code=404, detail="User not found")
+    db_user = response.scalar_one_or_none()
 
-    cache_key = f"interview_questions:{user_id}"
-    cached_data = await redis_client.get(cache_key)
-
-    evaluation_prompt = await evaluation_tempelate()
-    evaluation_llm = await llm_config(temperature=0.3)
-    evaluation_parser = JsonOutputParser(pydantic_object=EvaluationResult)
+    user_id = db_user.user_id
+    await manager.connect(websocket, user_id)
 
     try:
+        cache_key = f"interview_questions:{user_id}"
+        cached_data = await redis_client.get(cache_key)
+
         if not cached_data:
-            raise HTTPException(
-                status_code=404,
-                detail="Interview questions not found. Please generate questions first."
-            )
-        
+            await manager.send_message(user_id,
+                                    { 
+                                        "type": "error",
+                                        "message": "Interview questions not found. Please generate questions first."
+                                        })
+            return
+
         cached_data = json.loads(cached_data)
         questions = cached_data["questions"]
 
-        sections= questions.keys()
-        result=[]
-        print("Session started")
+        evaluation_prompt = await evaluation_tempelate()
+        evaluation_llm = await llm_config(temperature=0.3)
+        evaluation_parser = JsonOutputParser(pydantic_object=EvaluationResult)
+
+        # Create a new interview session in the database
         session = InterviewSession(
             user_id=user_id,
             job_role=cached_data["job_role"],
@@ -216,248 +258,126 @@ async def conduct_interview(
         db.add(session)
         await db.commit()
         await db.refresh(session)
-        for section in sections:
-            print("session in progress")
-            tts_speak(f"Section: {section}")
-            for i in range(len(questions.get(section))):
-                text=questions.get(section)[i]["question"]
-                model_answer=questions.get(section)[i]["answer"]
+
+        # Send session start message
+        await manager.send_message(user_id, {
+                "type": "session_start",
+                "session_id": session.id,
+                "job_role": cached_data["job_role"]
+            })
+
+        result=[]
+        for section in questions.keys():
+            await manager.send_message(user_id, {
+                "type": "section_start",
+                "section": section
+            })
+            
+            for question_data in questions[section]:
+                text = question_data["question"]
+                model_answer = question_data["answer"]
 
                 if isinstance(model_answer, list):
                     model_answer = "\n".join(model_answer)
 
                 question = Question(
-                session_id=session.id,
-                question_text=text,
-                model_answer=model_answer
-            )
-                
+                    session_id=session.id,
+                    question_text=text,
+                    model_answer=model_answer
+                )
                 db.add(question)
                 await db.commit()
                 await db.refresh(question)
 
-                print(text)
-                tts_speak(text)
-                logger.info("Starting audio recording session...")
-                #candidate_answer=record_audio_with_stop()
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio_file:
-                    audio_filename = temp_audio_file.name
-                record_audio(audio_filename)  # Record audio and save to file
-
-                # Convert recorded audio to text using Silero
-                candidate_answer = await audio_to_text_silero(audio_filename)
-
+                # Send question to client
+                await manager.send_message(user_id, {
+                    "type": "question",
+                    "question_id": question.id,
+                    "text": text
+                })
                 try:
-                    os.remove(audio_filename)
-                    logger.info(f"Temporary audio file {audio_filename} removed.")
-                except Exception as e:
-                    logger.error(f"Error removing temporary audio file: {e}")
+                    audio_response = await websocket.receive_bytes()
+                    candidate_answer = await audio_to_text_silero(audio_response)
 
-                evaluation_chain = evaluation_prompt | evaluation_llm | evaluation_parser
-                evaluation_result = await evaluation_chain.ainvoke(
-                    {
+                    # Evaluate response using LLM
+                    evaluation_chain = evaluation_prompt | evaluation_llm | evaluation_parser
+                    evaluation_result = await evaluation_chain.ainvoke({
                         "question": text,
                         "candidate_answer": candidate_answer,
                         "model_answer": model_answer,
-                    }
-                )
-                score = evaluation_result["score"]
-                feedback = evaluation_result["feedback"]
-                answer = Answer(
-                session_id=session.id,
-                question_id=question.id,
-                user_answer=candidate_answer,
-                score=int(score),
-                feedback=json.dumps(feedback)
-            )
-                db.add(answer)
-                await db.commit()
-                await db.refresh(question)
-                result.append({
-                    "section":section, 
-                    "result":evaluation_result
                     })
+
+                    score = evaluation_result["score"]
+                    feedback = evaluation_result["feedback"]
+
+                    # Save response in the database
+                    answer = Answer(
+                        session_id=session.id,
+                        question_id=question.id,
+                        user_answer=candidate_answer,
+                        score=int(score),
+                        feedback=json.dumps(feedback)
+                    )
+                    db.add(answer)
+                    await db.commit()
+                    #await db.refresh()
+
+                    # Send evaluation result to client
+                    await manager.send_message(user_id, {
+                            "type": "evaluation",
+                            "question_id": question.id,
+                            "transcribed_answer": candidate_answer,
+                            "score": score,
+                            "feedback": feedback
+                        })
+                    
+                    result.append({
+                            "section": section,
+                            "result": evaluation_result
+                        })
+                except Exception as e:
+                        logger.error(f"Error processing answer: {str(e)}")
+                        await manager.send_message(user_id, {
+                            "type": "error",
+                            "message": "Error processing answer"
+                        })
 
         session.status = 'completed'
         await db.commit()
 
         data = {
-            "job_role": cached_data["job_role"], 
-            "interview_questions": questions, 
+            "job_role": cached_data["job_role"],
+            "interview_questions": questions,
             "evaluation_result": result
-            }
+        }
         result_cache_key = f"evaluation_result:{user_id}"
         await redis_client.setex(
-            result_cache_key, 
-            settings.CACHE_EXPIRATION, 
+            result_cache_key,
+            settings.CACHE_EXPIRATION,
             json.dumps(data)
         )
-        logger.info("data saved successfully to database")
-        return success_response(data=data)
+
+        await manager.send_message(user_id, {
+            "type": "complete",
+            "data": data
+        })
+        #await websocket.close()
+
+    except WebSocketDisconnect:
+        logger.info(f"Client disconnected: {user_id}")
+        if 'session' in locals():
+            session.status = 'incomplete'
+            await db.commit()
 
     except Exception as e:
         logger.error(f"Error in interview process: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# async def get_token_from_websocket(websocket: WebSocket):
-#     """Extracts token from the WebSocket headers."""
-#     token = websocket.headers.get("Authorization")
-#     if not token:
-#         await websocket.close(code=1008)  # Close with policy violation code
-#         return None
-#     return token.replace("Bearer ", "")
-
-# def decode_jwt(token: str):
-#     """Decodes the JWT token and returns the user data."""
-#     try:
-#         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-#         user_email: str = payload.get("sub")
-#         return user_email
-#     except jwt.ExpiredSignatureError:
-#         raise WebSocketException(status_code=401, detail="Token has expired")
-#     except jwt.InvalidTokenError:
-#         raise WebSocketException(status_code=401, detail="Invalid token")
-
-# @interview_router.websocket("/interview")
-# async def websocket_interview(
-#     websocket: WebSocket, 
-#     db: AsyncSession = Depends(get_db_session)
-# ):
-#     """
-#     WebSocket-based real-time interview session.
+        await manager.send_message(user_id, {
+            "type": "error",
+            "message": str(e)
+        })
     
-#     - Sends questions to the user one at a time.
-#     - Receives audio responses, converts them to text, and evaluates them.
-#     - Sends back evaluation scores and feedback in real-time.
-
-#     Args:
-#         websocket (WebSocket): WebSocket connection.
-#         db (AsyncSession): The database session.
-#         current_user (ViewUser): The authenticated user.
-
-#     """
-    
-#     await websocket.accept()
-#     token = await get_token_from_websocket(websocket)
-#     if not token:
-#         return
-#     user_email = decode_jwt(token)
-#     token_data = TokenData(user_email=user_email)
-#     stmt = select(UserModel).where(UserModel.email == token_data.user_email)
-#     result = await db.execute(stmt)
-#     if result is None:
-#         raise HTTPException(status_code=404, detail="User not found")
-#     db_user = result.scalar_one_or_none()
-
-#     user_id = db_user.user_id
-#     cache_key = f"interview_questions:{user_id}"
-#     cached_data = await redis_client.get(cache_key)
-
-#     if not cached_data:
-#         await websocket.send_json({"error": "Interview questions not found. Please generate questions first."})
-#         await websocket.close()
-#         return
-
-#     cached_data = json.loads(cached_data)
-#     questions = cached_data["questions"]
-
-#     # Create a new interview session in the database
-#     session = InterviewSession(
-#         user_id=user_id,
-#         job_role=cached_data["job_role"],
-#         status='active'
-#     )
-#     db.add(session)
-#     await db.commit()
-#     await db.refresh(session)
-
-#     try:
-#         for section, question_list in questions.items():
-#             await websocket.send_json({"section": section})
-            
-#             for question_data in question_list:
-#                 text = question_data["question"]
-#                 model_answer = question_data["answer"]
-
-#                 if isinstance(model_answer, list):
-#                     model_answer = "\n".join(model_answer)
-
-#                 question = Question(
-#                     session_id=session.id,
-#                     question_text=text,
-#                     model_answer=model_answer
-#                 )
-#                 db.add(question)
-#                 await db.commit()
-#                 await db.refresh(question)
-
-#                 # Send question to frontend
-#                 await websocket.send_json({"question": text})
-
-#                 # Wait for the candidate's response (audio file path or text)
-#                 response_data = await websocket.receive_json()
-                
-#                 if "audio" in response_data:
-#                     audio_file = response_data["audio"]
-#                     candidate_answer = await audio_to_text_silero(audio_file)
-                    
-#                     # Remove temporary audio file
-#                     try:
-#                         os.remove(audio_file)
-#                     except Exception as e:
-#                         logger.error(f"Error removing temporary audio file: {e}")
-#                 else:
-#                     candidate_answer = response_data.get("text", "")
-
-#                 # Evaluate response using LLM
-#                 evaluation_prompt = await evaluation_tempelate()
-#                 evaluation_llm = await llm_config(temperature=0.3)
-#                 evaluation_parser = JsonOutputParser(pydantic_object=EvaluationResult)
-
-#                 evaluation_chain = evaluation_prompt | evaluation_llm | evaluation_parser
-#                 evaluation_result = await evaluation_chain.ainvoke({
-#                     "question": text,
-#                     "candidate_answer": candidate_answer,
-#                     "model_answer": model_answer,
-#                 })
-
-#                 score = evaluation_result["score"]
-#                 feedback = evaluation_result["feedback"]
-
-#                 # Save response in the database
-#                 answer = Answer(
-#                     session_id=session.id,
-#                     question_id=question.id,
-#                     user_answer=candidate_answer,
-#                     score=int(score),
-#                     feedback=json.dumps(feedback)
-#                 )
-#                 db.add(answer)
-#                 await db.commit()
-#                 await db.refresh(question)
-
-#                 # Send evaluation result back to the client
-#                 await websocket.send_json({
-#                     "section": section,
-#                     "question": text,
-#                     "score": score,
-#                     "feedback": feedback
-#                 })
-
-#         session.status = 'completed'
-#         await db.commit()
-#         await websocket.send_json({"status": "Interview completed"})
-#         await websocket.close()
-
-#     except WebSocketDisconnect:
-#         session.status = 'disconnected'
-#         await db.commit()
-#         logger.info(f"User {user_id} disconnected from the interview session.")
-
-#     except Exception as e:
-#         logger.error(f"Error in interview process: {str(e)}")
-#         await websocket.send_json({"error": str(e)})
-#         await websocket.close()
+    finally:
+        manager.disconnect(user_id)
 
 
 @interview_router.get("/result")
