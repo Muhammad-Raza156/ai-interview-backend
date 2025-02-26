@@ -66,7 +66,7 @@ logging.basicConfig(
 logging.getLogger().addFilter(sensitive_data)
 
 # Create the FastAPI app instance
-app = FastAPI()
+app = FastAPI(title="AI Interview Backend", version=settings.API_VERSION)
 
 add_pagination(app)
 

@@ -1,4 +1,4 @@
-from app.core.celery import celery_app
+from app.worker.celery import app
 from sqlalchemy.orm import Session
 import celery
 from sqlalchemy import create_engine, select
@@ -31,7 +31,7 @@ engine = create_engine(database_url,
                        poolclass=QueuePool,
                        echo=True)
 
-@celery_app.task(name="process_file", max_retries=3)
+@app.task(name="process_file", max_retries=3)
 def process_file(file_content: bytes, user_id: UUID):
     """
     Processes a resume file by extracting text, parsing it, and saving the parsed data to the database.
@@ -107,7 +107,7 @@ def process_file(file_content: bytes, user_id: UUID):
 
                 #save to redis cache
                 cache_key = f"user_{user_id}_resume"
-                celery_app.backend.set(cache_key, 
+                app.backend.set(cache_key, 
                                        processed_resume_json, 
                                        expires=settings.CACHE_EXPIRATION)
                 return {"data": existing_resume.parsed_sections, 

@@ -33,7 +33,7 @@ def calculate_similarity(text1, text2):
 
 
 
-@similarity_router.post("/similarity")
+@similarity_router.get("/similarity")
 async def text_similarity(current_user: ViewUser = Depends(get_current_user), 
                           db: AsyncSession = Depends(get_db_session)):
     """

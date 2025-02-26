@@ -120,4 +120,4 @@ async def login(user_login: UserLogin, db: AsyncSession = Depends(get_db_session
 
     except Exception as e:
         logger.error(f"Error logging in user: {str(e)}")
-        raise error_response(message=str(e))
+        raise HTTPException(status_code=400, detail="Invalid email or password")

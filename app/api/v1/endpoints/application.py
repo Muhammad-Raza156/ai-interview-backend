@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from app.core.config import settings
-from app.core.tasks import process_file
+from app.worker.tasks import process_file
 from app.db.session import get_db_session
 from app.schemas.user_management import ViewUser
 from app.models.db_models import (

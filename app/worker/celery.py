@@ -8,15 +8,15 @@ else:
     redis_url = settings.REDIS_URL
 
 
-celery_app = Celery(
+app = Celery(
     "tasks", 
     broker=redis_url,
     backend=redis_url,
-    include=['app.core.tasks']
+    include=['app.worker.tasks']
     )
 
 
-celery_app.conf.update(
+app.conf.update(
     task_track_started=True,
     task_serializer='json',
     result_serializer='json',

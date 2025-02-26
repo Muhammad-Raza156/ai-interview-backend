@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.utils.resume_analysis import prompt, OutputParser
 from app.utils.resume_parsing import llm_config
 from app.models.db_models import JobDetails, Resume
-from app.core.celery import celery_app
+from app.worker.celery import app
 
 
 logger = logging.getLogger(__name__)
@@ -85,7 +85,7 @@ async def resume_analysis(user: ViewUser = Depends(get_current_user),
     if resume_data is not None:
         resume_data = json.loads(resume_data)
     elif resume_data is None:
-        resume_data=celery_app.backend.get(resume_key)
+        resume_data=app.backend.get(resume_key)
         if resume_data is not None:
             resume_data = json.loads(resume_data)
         else:
