@@ -9,6 +9,7 @@ load_dotenv()
 from app.api.v1.endpoints.authentication import auth_router
 from app.api.v1.endpoints.application import application_router
 from app.api.v1.endpoints.resume_analysis import profiling_route
+from app.api.v1.endpoints.portfolio_analysis import portfolio_router
 from app.api.v1.endpoints.text_similarity import similarity_router
 from app.api.v1.endpoints.user_management import user_router
 from app.api.v1.endpoints.health import health_router
@@ -73,9 +74,9 @@ add_pagination(app)
 origins = [
     "http://localhost:3001",
     "http://localhost:3000",
+    "http://localhost:3002"
     "http://localhost:8000",
     "http://localhost:8001",
-    "http://localhost"
 ]
 
 app.add_middleware(
@@ -137,6 +138,9 @@ app.include_router(
 )
 app.include_router(
     profiling_route, prefix=f"/api/v{api_version}", tags=["Resume Analysis"]
+)
+app.include_router(
+    portfolio_router, prefix=f"/api/v{api_version}", tags=["Portfolio Analysis"]
 )
 app.include_router(
     similarity_router, prefix=f"/api/v{api_version}", tags=["Text Similarity"]

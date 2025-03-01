@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: str
     REDIS_URL: str
     CACHE_EXPIRATION: int
+    DATABASE_URL_TEST: str
     
 
     class Config:

@@ -4,6 +4,8 @@ from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import Base
 import uuid
+from sqlalchemy.orm import relationship
+import enum
 
 
 class User(Base):
@@ -48,6 +50,35 @@ class JobDetails(Base):
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
+
+
+class PortfolioStatus(enum.Enum):
+    PENDING = "Pending"
+    ANALYZED = "Analyzed"
+    FAILED = "Failed"
+
+
+class UserPortfolio(Base):
+    __tablename__ = "user_portfolios"
+
+    id = Column(
+        UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4
+        )
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id", ondelete="CASCADE"), 
+                     unique=True, nullable=False)
+    linkedin_url = Column(String, nullable=True)
+    github_url = Column(String, nullable=True)
+    linkedin_data = Column(JSON, nullable=True)
+    github_data = Column(JSON, nullable=True)
+    upload_date = Column(DateTime, server_default=func.now(), nullable=False)
+    status = Column(Enum(PortfolioStatus), default=PortfolioStatus.PENDING, nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationship to the User model (if you have a User model defined)
+    #user = relationship("User", back_populates="portfolios")
 
 class Resume(Base):
     __tablename__ = "resumes"

@@ -12,10 +12,11 @@ This document provides a comprehensive overview of the AI Interview Backend API,
 ## Table of Contents
 1. [User Management](#user-management)
 2. [Resume Analysis](#resume-analysis)
-3. [Application](#application)
-4. [Interview](#interview)
-5. [Salary Negotiation](#salary-negotiation)
-6. [Learning Paths](#learning-paths)
+3. [Portfolio](#portfolio)
+4. [Application](#application)
+5. [Interview](#interview)
+6. [Salary Negotiation](#salary-negotiation)
+7. [Learning Paths](#learning-paths)
 
 ---
 
@@ -384,7 +385,7 @@ curl -X GET "http://localhost:8000/api/v1.0/similarity" \
 - **Authentication**: Requires `HTTPBearer` token
 - **Request**:
   - **Method**: POST
-  - **Content-Type**: `multipart/form-data`
+  - **Content-Type**: `application/x-www-form-urlencoded`
   - **Headers**: `Authorization: Bearer <token>`
   - **Body**:
   ```bash
@@ -563,4 +564,61 @@ dict: A dictionary containing the user ID and the overall interview result.
 ```bash
 curl -X GET "http://localhost:8000/api/v1.0/result" \
      -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+
+## Portfolio
+### `POST /api/v1.0/portfolio/upload-portfolio`
+- **Description**: Uploads or updates a user's portfolio URL (e.g., GitHub, LinkedIn, personal website).
+- **Tags**: Portfolio Analysis
+- **Authentication**: Requires `HTTPBearer` token
+- **Request**:
+  - **Method**: POST
+  - **Content-Type**: `application/json`
+  - **Headers**: `Authorization: Bearer <token>`
+  - **Body**:
+  ```json
+    {
+      "portfolio_url": ""
+    }
+- **Response**:
+- **200 OK**:
+  ```json
+    {
+      "message": "Portfolio uploaded successfully",
+      "portfolio": {
+          "id": "123e4567-e89b-12d3-a456-426614174000",
+          "user_id": "987f6543-d21c-4b3a-8765-1234567890ab",
+          "portfolio_url": "https://www.example.com/my-portfolio",
+          "upload_date": "2024-08-20T10:00:00",
+          "status": "Pending",
+          "created_at": "2024-08-20T10:00:00",
+          "updated_at": "2024-08-20T10:00:00"
+      }
+    }
+  ```
+- **Raises**: 
+- **HTTPException 400**: Invalid or inacessible URL.
+- **422 Validation Error**:
+```json
+{
+  "detail": [
+    {
+      "loc": ["body","portfolio_url"],
+      "msg": "Input should be a valid URL, relative URL without a base",
+      "type": "url_parsing"
+    }
+  ]
+}
+```
+- **Example Usage**:
+```bash
+  curl -X 'POST' \
+  'http://localhost:8000/api/v1.0/portfolio/upload-portfolio' \
+  -H 'accept: application/json' \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  -H 'Content-Type: application/json' \
+  -d '{
+  "portfolio_url": "https://www.example.com/my-portfolio"
+}'
 ```
