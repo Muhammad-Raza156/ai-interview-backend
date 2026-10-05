@@ -38,6 +38,7 @@ async def process_pdf(pdf_content):
     libraries, as well as a local installation of Tesseract OCR.
     """
     if platform.system() == "Windows":
+        pytesseract.pytesseract.tesseract_cmd = r"C:\Users\EliteBook\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
         poppler_path=r"C:\Program Files\poppler-24.08.0\Library\bin"
     else:
         # Set Tesseract path
